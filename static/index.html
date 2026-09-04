@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<title>LaTeX-Projekt-Editor</title>
+<link rel="stylesheet" href="/vendor/codemirror/lib/codemirror.css">
+<link rel="stylesheet" href="/vendor/codemirror/theme/eclipse.css">
+<link rel="stylesheet" href="/vendor/codemirror/addon/hint/show-hint.css">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+  <!-- SVG-Icon-Sprite: alle Icons als <symbol> definiert und per <use> referenziert.
+       Bewusst KEINE Emoji verwendet — diese hängen von einer auf dem System
+       installierten Farb-Emoji-Schriftart ab (z.B. "Noto Color Emoji"), die
+       auf vielen Linux-Systemen (insbesondere Server-/Minimal-Installationen)
+       fehlt und dann zu unsichtbaren/leeren Icons führt. SVG-Icons rendern
+       dagegen überall garantiert identisch. -->
+  <svg style="display:none" aria-hidden="true">
+    <symbol id="icon-folder" viewBox="0 0 24 24"><path d="M3 6a2 2 0 0 1 2-2h4.17a2 2 0 0 1 1.41.59L12 6h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6z"/></symbol>
+    <symbol id="icon-folder-open" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4.17a2 2 0 0 1 1.41.59L12 7h6a2 2 0 0 1 2 2H8.5a2 2 0 0 0-1.94 1.51L4.9 18H3V7z"/><path d="M4.9 18l1.66-6.49A2 2 0 0 1 8.5 10H21a1 1 0 0 1 .97 1.24l-1.55 5.6A2 2 0 0 1 18.48 18.5H5.9a1 1 0 0 1-1-1z"/></symbol>
+    <symbol id="icon-file" viewBox="0 0 24 24"><path d="M7 2a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9l-7-7H7z"/><path d="M14 2v6a1 1 0 0 0 1 1h6z" opacity="0.45"/></symbol>
+    <symbol id="icon-file-lines" viewBox="0 0 24 24"><path d="M7 2a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9l-7-7H7z"/><path d="M14 2v6a1 1 0 0 0 1 1h6z" opacity="0.45"/><rect x="7.5" y="13" width="9" height="1.4" rx="0.5"/><rect x="7.5" y="16" width="9" height="1.4" rx="0.5"/><rect x="7.5" y="19" width="6" height="1.4" rx="0.5"/></symbol>
+    <symbol id="icon-file-grid" viewBox="0 0 24 24"><path d="M7 2a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9l-7-7H7z"/><path d="M14 2v6a1 1 0 0 0 1 1h6z" opacity="0.45"/><path d="M7.5 12.5h9v1.4h-9zm0 3h9v1.4h-9zm0 3h9v1.4h-9zm0-7.5h1.4v8H7.5zm3.8 0h1.4v8h-1.4zm3.8 0h1.4v8h-1.4z" opacity="0.9"/></symbol>
+    <symbol id="icon-file-image" viewBox="0 0 24 24"><path d="M7 2a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9l-7-7H7z"/><path d="M14 2v6a1 1 0 0 0 1 1h6z" opacity="0.45"/><circle cx="10" cy="14" r="1.3"/><path d="M8 19l2.5-3 1.8 2 2.2-3L17 19z"/></symbol>
+    <symbol id="icon-plus" viewBox="0 0 24 24"><path d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6z"/></symbol>
+    <symbol id="icon-pencil" viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></symbol>
+    <symbol id="icon-trash" viewBox="0 0 24 24"><path d="M9 3h6l1 2h4v2H4V5h4l1-2zm-3 6h12l-1 12a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L6 9z"/></symbol>
+    <symbol id="icon-gear" viewBox="0 0 24 24"><path d="M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6zm7.4 3a7.4 7.4 0 0 0-.13-1.36l2.03-1.58-2-3.46-2.4.96a7.5 7.5 0 0 0-2.35-1.36L14 3h-4l-.55 2.2a7.5 7.5 0 0 0-2.35 1.36l-2.4-.96-2 3.46 2.03 1.58A7.4 7.4 0 0 0 4.6 12c0 .46.05.92.13 1.36l-2.03 1.58 2 3.46 2.4-.96c.7.58 1.5 1.03 2.35 1.36L10 21h4l.55-2.2c.85-.33 1.65-.78 2.35-1.36l2.4.96 2-3.46-2.03-1.58c.08-.44.13-.9.13-1.36z"/></symbol>
+    <symbol id="icon-save" viewBox="0 0 24 24"><path d="M5 3h10.17a2 2 0 0 1 1.41.59l2.83 2.83A2 2 0 0 1 20 7.83V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2zm1 2v4h8V5H6zm2 8v6h8v-6H8z"/></symbol>
+    <symbol id="icon-search" viewBox="0 0 24 24"><path d="M10.5 3a6.5 6.5 0 1 0 4.1 11.55l4.42 4.42 1.4-1.4-4.42-4.42A6.5 6.5 0 0 0 10.5 3zm0 2a4.5 4.5 0 1 1 0 9 4.5 4.5 0 0 1 0-9z"/></symbol>
+    <symbol id="icon-diff" viewBox="0 0 24 24"><path d="M7 7h10.5l-2.6-2.6L15.9 3 21 8l-5.1 5-1.4-1.4L17.1 9H7V7zm10 10H6.5l2.6 2.6L8.1 21 3 16l5.1-5 1.4 1.4L6.9 15H17v2z"/></symbol>
+    <symbol id="icon-check" viewBox="0 0 24 24"><path d="M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z"/></symbol>
+    <symbol id="icon-warning" viewBox="0 0 24 24"><path d="M12 2 1 21h22L12 2zm0 6.5 5.6 9.7H6.4L12 8.5zm-.9 3v3.4h1.8v-3.4zm0 4.6v1.8h1.8v-1.8z"/></symbol>
+    <symbol id="icon-error" viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm3.5 12.1-1.4 1.4L12 13.4l-2.1 2.1-1.4-1.4L10.6 12 8.5 9.9l1.4-1.4L12 10.6l2.1-2.1 1.4 1.4L13.4 12z"/></symbol>
+    <symbol id="icon-link" viewBox="0 0 24 24"><path d="M13.06 8.94a1.5 1.5 0 0 1 0-2.12l1.77-1.77a4 4 0 1 1 5.66 5.66l-2.12 2.12-1.41-1.41 2.12-2.12a2 2 0 1 0-2.83-2.83l-1.77 1.77a1.5 1.5 0 0 1-2.12 0zM8.94 13.06a1.5 1.5 0 0 1 2.12 0 1.5 1.5 0 0 1 0 2.12l-1.77 1.77a4 4 0 1 1-5.66-5.66l2.12-2.12 1.41 1.41-2.12 2.12a2 2 0 1 0 2.83 2.83l1.77-1.77z"/></symbol>
+    <symbol id="icon-pin" viewBox="0 0 24 24"><path d="M6 2h12v20l-6-4-6 4z"/></symbol>
+    <symbol id="icon-info" viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 4a1.3 1.3 0 1 1 0 2.6A1.3 1.3 0 0 1 12 6zm-1.3 5h2.6v7h-2.6z"/></symbol>
+    <symbol id="icon-arrow-up" viewBox="0 0 24 24"><path d="M12 4 4 12l1.4 1.4L11 8v12h2V8l5.6 5.4L20 12z"/></symbol>
+  </svg>
+
+  <!-- Buttonleiste -->
+  <header id="toolbar">
+    <label class="project-name-label">Projekt:
+      <input id="projectName" type="text" placeholder="Projektname" value="Neues Projekt">
+    </label>
+
+    <div class="toolbar-group">
+      <select id="projectSelect" title="Gespeichertes Projekt auswählen">
+        <option value="">– Projekt laden –</option>
+      </select>
+      <button id="btnLoadProject"><svg class="icon"><use href="#icon-folder-open"></use></svg> Laden</button>
+      <button id="btnSaveProject"><svg class="icon"><use href="#icon-save"></use></svg> Speichern</button>
+    </div>
+
+    <div class="toolbar-group">
+      <input id="workingDirInput" type="text" placeholder="Pfad zum Arbeitsordner (z.B. /home/user/mein-paper)">
+      <button id="btnOpenFolder"><svg class="icon"><use href="#icon-folder"></use></svg> Öffnen</button>
+      <button id="btnBrowseFolder"><svg class="icon"><use href="#icon-search"></use></svg> Durchsuchen…</button>
+    </div>
+
+    <span id="statusMsg" class="status-msg"></span>
+  </header>
+
+  <!-- Vier Bereiche -->
+  <main id="workspace">
+
+    <!-- Bereich 1 (10%): Arbeitsordner -->
+    <section id="area-folder" class="area">
+      <h2>
+        <span class="header-label">Arbeitsordner</span>
+        <span class="header-hint" title="Rechtsklick auf einen Ordner oder eine freie Fläche: neuen Ordner/neue Datei anlegen · Rechtsklick auf eine Datei/einen Ordner: umbenennen/löschen">
+          <svg class="icon"><use href="#icon-info"></use></svg>
+        </span>
+      </h2>
+      <div id="fileTree" class="scroll-content">
+        <p class="hint">Noch kein Ordner geöffnet.</p>
+      </div>
+      <div id="folderFooter" class="area-footer">
+        <button id="btnLatexDiff" class="footer-btn" title="Vergleicht die im Arbeitsordner per Einfachklick ausgewählte Datei mit der aktuell im Editor geöffneten Datei via latexdiff"><svg class="icon"><use href="#icon-diff"></use></svg> Diff erstellen</button>
+      </div>
+    </section>
+
+    <!-- Bereich 2 (40%): LaTeX-Editor -->
+    <section id="area-editor" class="area">
+      <h2>
+        <span id="editorTitle" class="header-label">Editor</span>
+        <span class="header-actions">
+          <button id="btnSaveFile" class="header-btn" title="Datei speichern (Strg+S)"><svg class="icon"><use href="#icon-save"></use></svg> Speichern</button>
+          <button id="btnCompile" class="header-btn" title="LaTeX-Datei kompilieren"><svg class="icon"><use href="#icon-gear"></use></svg> Kompilieren</button>
+        </span>
+      </h2>
+      <div id="editorContainer" class="scroll-content">
+        <p id="editorPlaceholder" class="hint">Wähle links eine .tex-Datei aus dem Arbeitsordner aus …</p>
+      </div>
+      <div id="editorFooter" class="area-footer">
+        <input id="searchInput" type="text" class="footer-input" placeholder="Suchen…" title="Suchbegriff">
+        <button id="btnFindPrev" class="footer-btn" title="Vorheriger Treffer (Umschalt+Enter)">◀</button>
+        <button id="btnFindNext" class="footer-btn" title="Nächster Treffer (Enter)">▶</button>
+        <span id="searchMatchCount" class="search-match-count"></span>
+        <input id="replaceInput" type="text" class="footer-input" placeholder="Ersetzen mit…" title="Ersatztext">
+        <button id="btnReplaceOne" class="footer-btn" title="Aktuellen Treffer ersetzen">Ersetzen</button>
+        <button id="btnReplaceAll" class="footer-btn" title="Alle Treffer ersetzen">Alle</button>
+        <span class="footer-spacer"></span>
+        <button id="btnUndo" class="footer-btn" title="Rückgängig (Strg+Z)">↶</button>
+        <button id="btnRedo" class="footer-btn" title="Wiederholen (Strg+Y)">↷</button>
+      </div>
+    </section>
+
+    <!-- Bereich 3 (40%): PDF / Fehler (Reiter) -->
+    <section id="area-output" class="area">
+      <div class="tabs">
+        <button class="tab-btn active" data-tab="tab-pdf">PDF</button>
+        <button class="tab-btn" data-tab="tab-errors">Fehler</button>
+      </div>
+      <div id="tab-pdf" class="tab-content active scroll-content">
+        <p class="hint">Noch keine PDF kompiliert.</p>
+        <iframe id="pdfFrame" style="display:none;"></iframe>
+      </div>
+      <div id="tab-errors" class="tab-content scroll-content">
+        <p class="hint">Keine Fehler – noch nicht kompiliert.</p>
+      </div>
+    </section>
+
+    <!-- Bereich 4 (10%): BibTeX-Quellen -->
+    <section id="area-bib" class="area">
+      <h2>
+        <span class="header-label">Quellen</span>
+        <span class="header-actions">
+          <button id="btnNewBibEntry" class="header-btn" title="Neuen Zitat-Eintrag erstellen"><svg class="icon"><use href="#icon-plus"></use></svg> Neu</button>
+          <span class="header-hint" title="Doppelklick: Link/Google Scholar öffnen · Ziehen in den Editor: \cite{} einfügen · Rechtsklick: weitere Optionen">
+            <svg class="icon"><use href="#icon-info"></use></svg>
+          </span>
+        </span>
+      </h2>
+      <div id="bibList" class="scroll-content">
+        <p class="hint">Keine BibTeX-Datei gefunden.</p>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Ordnerauswahl-Dialog -->
+  <div id="folderModal" class="modal-overlay" style="display:none;">
+    <div class="modal">
+      <h3>Arbeitsordner auswählen</h3>
+      <div class="modal-path-row">
+        <button id="modalUp" title="Übergeordneter Ordner"><svg class="icon"><use href="#icon-arrow-up"></use></svg></button>
+        <input id="modalCurrentPath" type="text" readonly>
+      </div>
+      <div id="modalDirList" class="modal-dir-list"></div>
+      <div class="modal-actions">
+        <button id="modalCancel">Abbrechen</button>
+        <button id="modalSelect" class="primary"><svg class="icon"><use href="#icon-check"></use></svg> Diesen Ordner wählen</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Kontextmenü für den Dateibaum (Rechtsklick) -->
+  <div id="contextMenu" class="context-menu" style="display:none;">
+    <div class="context-menu-item" data-action="new-folder"><svg class="icon"><use href="#icon-folder"></use></svg> Neuer Ordner hier</div>
+    <div class="context-menu-item" data-action="new-file"><svg class="icon"><use href="#icon-file"></use></svg> Neue .tex-Datei hier</div>
+    <div class="context-menu-item" data-action="rename"><svg class="icon"><use href="#icon-pencil"></use></svg> Umbenennen</div>
+    <div class="context-menu-item danger" data-action="delete"><svg class="icon"><use href="#icon-trash"></use></svg> Löschen</div>
+  </div>
+
+  <!-- Kontextmenü für Zitate (Rechtsklick in Bereich 4) -->
+  <div id="bibContextMenu" class="context-menu" style="display:none;">
+    <div class="context-menu-item" data-action="open-link"><svg class="icon"><use href="#icon-link"></use></svg> Link/Google Scholar öffnen</div>
+    <div class="context-menu-item" data-action="insert-cite"><svg class="icon"><use href="#icon-pin"></use></svg> \cite{} an Cursor einfügen</div>
+    <div class="context-menu-item" data-action="edit-bib"><svg class="icon"><use href="#icon-pencil"></use></svg> Bearbeiten</div>
+    <div class="context-menu-item danger" data-action="delete-bib"><svg class="icon"><use href="#icon-trash"></use></svg> Löschen</div>
+  </div>
+
+  <!-- Bearbeiten-Dialog für einen Zitat-Eintrag -->
+  <div id="bibEditModal" class="modal-overlay" style="display:none;">
+    <div class="modal bib-edit-modal">
+      <h3 id="bibEditTitle">Eintrag bearbeiten</h3>
+      <div class="bib-edit-body">
+        <textarea id="bibEditTextarea" class="bib-edit-textarea" spellcheck="false"></textarea>
+      </div>
+      <div class="modal-actions">
+        <button id="bibEditCancel">Abbrechen</button>
+        <button id="bibEditSave" class="primary"><svg class="icon"><use href="#icon-save"></use></svg> Speichern</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bildvorschau-Dialog -->
+  <div id="imageModal" class="modal-overlay" style="display:none;">
+    <div class="modal image-modal">
+      <h3 id="imageModalTitle">Bildvorschau</h3>
+      <div class="image-modal-body">
+        <img id="imagePreview" alt="Bildvorschau">
+      </div>
+      <div class="modal-actions">
+        <button id="imageModalClose">Schließen</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tabellenvorschau-Dialog (Excel/LibreOffice/CSV) -->
+  <div id="tableModal" class="modal-overlay" style="display:none;">
+    <div class="modal table-modal">
+      <h3 id="tableModalTitle">Tabellenvorschau</h3>
+      <div id="tableModalBody" class="table-modal-body"></div>
+      <div class="modal-actions">
+        <button id="tableModalClose">Schließen</button>
+      </div>
+    </div>
+  </div>
+
+<script src="/vendor/codemirror/lib/codemirror.js"></script>
+<script src="/vendor/codemirror/mode/stex/stex.js"></script>
+<script src="/vendor/codemirror/addon/search/searchcursor.js"></script>
+<script src="/vendor/codemirror/addon/hint/show-hint.js"></script>
+<script src="/app.js"></script>
+</body>
+</html>

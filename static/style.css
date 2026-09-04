@@ -1,0 +1,685 @@
+:root {
+  --bar-height: 52px;
+  --area-header-height: 38px;
+  --border: #d0d5dd;
+  --bg-panel: #ffffff;
+  --bg-app: #f2f4f7;
+  --accent: #2563eb;
+  --accent-hover: #1d4ed8;
+  --text: #1e2530;
+  --muted: #6b7280;
+  --error: #b91c1c;
+  --error-bg: #fef2f2;
+  --warning: #92600a;
+  --warning-bg: #fffaeb;
+}
+
+* { box-sizing: border-box; }
+
+/* SVG-Icons: feste Größe, folgen per currentColor immer der Textfarbe des
+   umgebenden Elements (Buttons, Kontextmenü-Einträge, farbige Status-
+   meldungen, ausgewählte/weiße Baumzeilen, …) — schriftartunabhängig,
+   im Gegensatz zu Emoji-Icons. */
+.icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  fill: currentColor;
+  vertical-align: -2px;
+}
+.icon-lg { width: 18px; height: 18px; }
+.icon-sm { width: 12px; height: 12px; }
+
+/* Farbliche Unterscheidung der Datei-Icons im Arbeitsordner nach Typ. */
+.tree-icon .icon-folder { color: #eab308; }
+.tree-icon .icon-tex { color: #2563eb; }
+.tree-icon .icon-bib { color: #7c3aed; }
+.tree-icon .icon-pdf { color: #dc2626; }
+.tree-icon .icon-image { color: #16a34a; }
+.tree-icon .icon-table { color: #ea580c; }
+.tree-icon .icon-config { color: #6b7280; }
+.tree-icon .icon-log { color: #9ca3af; }
+.tree-icon .icon-build { color: #9ca3af; }
+.tree-icon .icon-backup { color: #d97706; }
+.tree-icon .icon-generic { color: #6b7280; }
+/* Im ausgewählten (blau hinterlegten) Zustand sollen alle Datei-Icons
+   weiß erscheinen, damit sie auf dem farbigen Hintergrund lesbar bleiben. */
+.tree-item.selected .tree-icon .icon { color: #fff; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  font-family: "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  color: var(--text);
+  background: var(--bg-app);
+}
+
+/* ---------- Buttonleiste ---------- */
+
+#toolbar {
+  height: var(--bar-height);
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 14px;
+  background: #1e2530;
+  color: #fff;
+  flex-wrap: wrap;
+}
+
+#toolbar input, #toolbar select {
+  padding: 5px 8px;
+  border-radius: 5px;
+  border: 1px solid #3b4453;
+  background: #2a3242;
+  color: #fff;
+  font-size: 13px;
+}
+
+#toolbar input::placeholder { color: #9aa4b2; }
+
+.project-name-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+#projectName { width: 160px; }
+#workingDirInput { width: 280px; }
+
+.toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+#toolbar button {
+  padding: 6px 10px;
+  border-radius: 5px;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+#toolbar button:hover { background: var(--accent-hover); }
+
+.status-msg {
+  margin-left: auto;
+  font-size: 12px;
+  color: #b7e4c7;
+  white-space: nowrap;
+}
+.status-msg.error { color: #ffb4b4; }
+
+/* ---------- Workspace: vier Bereiche ---------- */
+
+#workspace {
+  display: flex;
+  height: calc(100vh - var(--bar-height));
+  width: 100%;
+}
+
+.area {
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border);
+  background: var(--bg-panel);
+  overflow: hidden;
+}
+.area:last-child { border-right: none; }
+
+#area-folder { flex: 0 0 10%; max-width: 10%; }
+#area-editor { flex: 0 0 40%; max-width: 40%; }
+#area-output { flex: 0 0 40%; max-width: 40%; }
+#area-bib    { flex: 0 0 10%; max-width: 10%; }
+
+.area h2 {
+  margin: 0;
+  height: var(--area-header-height);
+  box-sizing: border-box;
+  padding: 0 10px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+  background: #f9fafb;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Der Titeltext darf schrumpfen/abgeschnitten werden (mit "…"), damit
+   Buttons und Icons daneben in schmalen Spalten (Bereich 1/4, je 10%
+   Breite) niemals durch das "overflow: hidden" von .area verdeckt werden. */
+.header-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.header-btn {
+  flex-shrink: 0;
+  text-transform: none;
+  letter-spacing: normal;
+  font-size: 11px;
+  padding: 3px 7px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: #fff;
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.header-btn:hover { background: #eef2ff; border-color: var(--accent); }
+
+.header-actions {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.header-hint {
+  flex-shrink: 0;
+  cursor: help;
+  font-size: 12px;
+  opacity: 0.75;
+}
+
+.scroll-content {
+  flex: 1;
+  overflow: auto;
+  padding: 8px 10px;
+}
+
+.hint { color: var(--muted); font-size: 12px; }
+
+/* ---------- Dateibaum ---------- */
+
+#fileTree ul {
+  list-style: none;
+  margin: 0;
+  padding-left: 14px;
+}
+#fileTree > ul { padding-left: 0; }
+
+#fileTree li {
+  font-size: 12.5px;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+
+.tree-item {
+  cursor: pointer;
+  padding: 1px 3px;
+  border-radius: 3px;
+  display: inline-block;
+}
+.tree-item:hover { background: #eef2ff; }
+.tree-item.dir { font-weight: 600; }
+.tree-item.selected { background: var(--accent); color: #fff; }
+.tree-item[draggable="true"] { cursor: grab; }
+.tree-item.dragging { opacity: 0.5; cursor: grabbing; }
+
+.tree-toggle {
+  display: inline-block;
+  width: 12px;
+  text-align: center;
+  font-size: 9px;
+  color: var(--muted);
+  user-select: none;
+}
+.tree-item.selected .tree-toggle { color: #fff; }
+
+.tree-icon {
+  display: inline-block;
+  margin-right: 4px;
+}
+
+.tree-children.collapsed {
+  display: none;
+}
+
+/* ---------- Editor (CodeMirror) ---------- */
+
+#editorContainer {
+  flex: 1;
+  padding: 0;
+  overflow: hidden;
+  position: relative;
+}
+
+#editorContainer.drag-over {
+  outline: 2px dashed var(--accent);
+  outline-offset: -2px;
+}
+
+#editorPlaceholder {
+  padding: 10px;
+}
+
+#editorContainer .CodeMirror {
+  height: 100%;
+  font-family: "Fira Code", "Consolas", monospace;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+#editorContainer .fallback-editor {
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  border: none;
+  outline: none;
+  resize: none;
+  padding: 10px;
+  font-family: "Fira Code", "Consolas", monospace;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* Hervorhebung ALLER Suchtreffer (nicht nur des aktuell selektierten,
+   der zusätzlich über CodeMirrors normale Selektionsfarbe abgesetzt ist). */
+.cm-search-match {
+  background-color: #fff2a8;
+  border-radius: 2px;
+}
+
+/* Markierung von Zeilen mit Kompilierfehlern/-warnungen (siehe Reiter
+   "Fehler" in Bereich 3, nach -file-line-error ausgewertet). */
+.cm-error-line {
+  background-color: #fde3e3;
+}
+.cm-warning-line {
+  background-color: #fff6d8;
+}
+.cm-issue-gutter {
+  width: 14px;
+}
+.cm-issue-marker {
+  display: inline-block;
+  font-size: 10px;
+  line-height: 1;
+  cursor: default;
+}
+.cm-issue-marker-error { color: var(--error); }
+.cm-issue-marker-warning { color: var(--warning); }
+
+/* ---------- Fußleisten (Bereich 1 + Bereich 2): einheitliche Höhe wie der Header ---------- */
+
+.area-footer {
+  height: var(--area-header-height);
+  box-sizing: border-box;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border-top: 1px solid var(--border);
+  background: #f9fafb;
+  overflow-x: auto;
+  overflow-y: hidden;
+  white-space: nowrap;
+}
+
+.footer-input {
+  flex-shrink: 0;
+  width: 110px;
+  padding: 4px 7px;
+  box-sizing: border-box;
+  font-size: 11.5px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: #fff;
+  color: var(--text);
+}
+.footer-input:focus { outline: 1.5px solid var(--accent); }
+
+.footer-btn {
+  flex-shrink: 0;
+  text-transform: none;
+  letter-spacing: normal;
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: #fff;
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.footer-btn:hover { background: #eef2ff; border-color: var(--accent); }
+.footer-btn:disabled { opacity: 0.45; cursor: default; }
+.footer-btn:disabled:hover { background: #fff; border-color: var(--border); }
+
+.search-match-count {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--muted);
+  min-width: 44px;
+}
+
+.footer-spacer {
+  flex: 1 1 auto;
+  min-width: 8px;
+}
+
+/* ---------- Tabs (PDF / Fehler) ---------- */
+
+.tabs {
+  height: var(--area-header-height);
+  box-sizing: border-box;
+  display: flex;
+  align-items: stretch;
+  border-bottom: 1px solid var(--border);
+  background: #f9fafb;
+}
+.tab-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 10px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--muted);
+  border-bottom: 2px solid transparent;
+}
+.tab-btn.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+.tab-content { display: none; }
+.tab-content.active { display: block; }
+
+#tab-pdf { padding: 0; }
+#pdfFrame {
+  width: 100%;
+  height: 100%;
+  border: none;
+  min-height: 300px;
+}
+
+.error-item {
+  background: var(--error-bg);
+  color: var(--error);
+  border: 1px solid #fecaca;
+  border-radius: 5px;
+  padding: 6px 8px;
+  margin-bottom: 6px;
+  font-size: 12.5px;
+  font-family: "Consolas", monospace;
+  white-space: pre-wrap;
+}
+.warning-item {
+  background: var(--warning-bg);
+  color: var(--warning);
+  border: 1px solid #fde68a;
+  border-radius: 5px;
+  padding: 6px 8px;
+  margin-bottom: 6px;
+  font-size: 12.5px;
+  font-family: "Consolas", monospace;
+  white-space: pre-wrap;
+}
+
+.issue-item-clickable {
+  cursor: pointer;
+}
+.issue-item-clickable:hover {
+  filter: brightness(0.97);
+  text-decoration: underline;
+}
+.success-item {
+  color: #166534;
+  font-size: 12.5px;
+  padding: 8px;
+}
+
+/* ---------- BibTeX-Liste ---------- */
+
+.bib-entry {
+  border-bottom: 1px solid #eee;
+  padding: 6px 4px;
+  font-size: 11.5px;
+  border-radius: 4px;
+  cursor: grab;
+}
+.bib-entry:hover {
+  background: #eef2ff;
+}
+.bib-entry.dragging {
+  opacity: 0.5;
+  cursor: grabbing;
+}
+.bib-entry .bib-key {
+  font-weight: 700;
+  color: var(--accent);
+  display: block;
+}
+.bib-entry .bib-title {
+  display: block;
+  margin-top: 2px;
+}
+.bib-entry .bib-meta {
+  display: block;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.bib-edit-modal {
+  width: 560px;
+}
+.bib-edit-body {
+  padding: 12px 16px;
+}
+.bib-edit-textarea {
+  width: 100%;
+  min-height: 260px;
+  resize: vertical;
+  font-family: "Fira Code", "Consolas", monospace;
+  font-size: 12.5px;
+  line-height: 1.5;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-sizing: border-box;
+}
+
+/* ---------- Ordnerauswahl-Dialog ---------- */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 20, 30, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal {
+  background: #fff;
+  border-radius: 8px;
+  width: 520px;
+  max-width: 92vw;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+  overflow: hidden;
+}
+
+.modal h3 {
+  margin: 0;
+  padding: 14px 16px 10px;
+  font-size: 15px;
+  border-bottom: 1px solid var(--border);
+}
+
+.modal-path-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.modal-path-row input {
+  flex: 1;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  font-size: 12.5px;
+  color: var(--muted);
+  background: #f9fafb;
+}
+
+.modal-path-row button {
+  padding: 5px 9px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: #f2f4f7;
+  cursor: pointer;
+}
+.modal-path-row button:hover { background: #e5e9f0; }
+
+.modal-dir-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px 8px;
+  min-height: 220px;
+}
+
+.modal-dir-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 13px;
+}
+.modal-dir-item:hover { background: #eef2ff; }
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+  background: #f9fafb;
+}
+
+.modal-actions button {
+  padding: 7px 12px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: #fff;
+  cursor: pointer;
+  font-size: 13px;
+}
+.modal-actions button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.modal-actions button.primary:hover { background: var(--accent-hover); }
+
+/* ---------- Kontextmenü (Dateibaum) ---------- */
+
+.context-menu {
+  position: fixed;
+  z-index: 1100;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  min-width: 190px;
+  padding: 4px;
+}
+
+.context-menu-item {
+  padding: 7px 10px;
+  font-size: 12.5px;
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.context-menu-item:hover { background: #eef2ff; }
+.context-menu-item.danger { color: var(--error); }
+.context-menu-item.danger:hover { background: var(--error-bg); }
+
+/* ---------- Bildvorschau-Dialog ---------- */
+
+.image-modal {
+  width: auto;
+  max-width: 90vw;
+}
+
+.image-modal-body {
+  padding: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: auto;
+  max-height: 70vh;
+  background: #f2f4f7;
+}
+
+.image-modal-body img {
+  max-width: 100%;
+  max-height: 65vh;
+  display: block;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.15);
+}
+
+/* ---------- Tabellenvorschau-Dialog ---------- */
+
+.table-modal {
+  width: 720px;
+  max-width: 92vw;
+}
+
+.table-modal-body {
+  padding: 12px 16px;
+  overflow: auto;
+  max-height: 65vh;
+}
+
+.preview-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 12.5px;
+}
+
+.preview-table th,
+.preview-table td {
+  border: 1px solid var(--border);
+  padding: 5px 8px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.preview-table thead th {
+  background: #f2f4f7;
+  position: sticky;
+  top: 0;
+  font-weight: 700;
+}
+
+.preview-table tbody tr:nth-child(even) {
+  background: #f9fafb;
+}
+
