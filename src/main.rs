@@ -259,7 +259,26 @@ struct PathQuery {
 }
 
 async fn get_file(Query(q): Query<PathQuery>) -> ApiResult<String> {
-    let content = std::fs::read_to_string(&q.path).map_err(|e| {
+    let base_dir = Path::new("projects")
+        .canonicalize()
+        .map_err(|e| AppError(StatusCode::BAD_REQUEST, format!("Basisordner ungültig: {e}")))?;
+
+    let candidate = base_dir.join(&q.path);
+    let safe_path = candidate.canonicalize().map_err(|e| {
+        AppError(
+            StatusCode::BAD_REQUEST,
+            format!("Datei konnte nicht gelesen werden ({}): {e}", q.path),
+        )
+    })?;
+
+    if !safe_path.starts_with(&base_dir) {
+        return Err(AppError(
+            StatusCode::BAD_REQUEST,
+            format!("Ungültiger Pfad außerhalb von projects: {}", q.path),
+        ));
+    }
+
+    let content = std::fs::read_to_string(&safe_path).map_err(|e| {
         AppError(
             StatusCode::BAD_REQUEST,
             format!("Datei konnte nicht gelesen werden ({}): {e}", q.path),
