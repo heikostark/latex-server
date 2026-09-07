@@ -720,7 +720,57 @@ struct BibEntryDeleteBody {
 }
 
 async fn delete_bib_entry(Json(body): Json<BibEntryDeleteBody>) -> ApiResult<Json<serde_json::Value>> {
-    let content = std::fs::read_to_string(&body.bib_path).map_err(|e| {
+    let requested_path = PathBuf::from(&body.bib_path);
+    if requested_path.is_absolute() {
+        return Err(AppError(
+            StatusCode::BAD_REQUEST,
+            "Ungültiger Pfad: absolute Pfade sind nicht erlaubt.".into(),
+        ));
+    }
+
+    let base_dir = std::env::current_dir().map_err(|e| {
+        AppError(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Arbeitsverzeichnis konnte nicht ermittelt werden: {e}"),
+        )
+    })?;
+    let candidate_path = base_dir.join(&requested_path);
+
+    let canonical_target = if candidate_path.exists() {
+        candidate_path.canonicalize().map_err(|e| {
+            AppError(
+                StatusCode::BAD_REQUEST,
+                format!("Ungültiger Pfad ({}): {e}", body.bib_path),
+            )
+        })?
+    } else {
+        let parent = candidate_path.parent().ok_or_else(|| {
+            AppError(
+                StatusCode::BAD_REQUEST,
+                "Ungültiger Pfad: kein Elternverzeichnis vorhanden.".into(),
+            )
+        })?;
+        let canonical_parent = parent.canonicalize().map_err(|e| {
+            AppError(
+                StatusCode::BAD_REQUEST,
+                format!("Ungültiger Pfad ({}): {e}", body.bib_path),
+            )
+        })?;
+        canonical_parent.join(
+            candidate_path
+                .file_name()
+                .ok_or_else(|| AppError(StatusCode::BAD_REQUEST, "Ungültiger Dateiname.".into()))?,
+        )
+    };
+
+    if !canonical_target.starts_with(&base_dir) {
+        return Err(AppError(
+            StatusCode::BAD_REQUEST,
+            "Ungültiger Pfad: Zugriff außerhalb des Projektverzeichnisses ist nicht erlaubt.".into(),
+        ));
+    }
+
+    let content = std::fs::read_to_string(&canonical_target).map_err(|e| {
         AppError(
             StatusCode::BAD_REQUEST,
             format!("BibTeX-Datei konnte nicht gelesen werden ({}): {e}", body.bib_path),
@@ -746,8 +796,8 @@ async fn delete_bib_entry(Json(body): Json<BibEntryDeleteBody>) -> ApiResult<Jso
     new_content.push_str(&content[..pos]);
     new_content.push_str(&content[pos + entry.raw.len()..]);
 
-    backup_before_change(&PathBuf::from(&body.bib_path)); // .bak der Datei vor dem Löschen des Eintrags
-    std::fs::write(&body.bib_path, new_content)?;
+    backup_before_change(&canonical_target); // .bak der Datei vor dem Löschen des Eintrags
+    std::fs::write(&canonical_target, new_content)?;
     Ok(Json(serde_json::json!({ "ok": true })))
 }
 
