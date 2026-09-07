@@ -592,7 +592,30 @@ async fn get_table(Query(q): Query<PathQuery>) -> ApiResult<Json<table::TableRes
 // ---------- /api/bib ----------
 
 async fn get_bib(Query(q): Query<PathQuery>) -> ApiResult<Json<Vec<bibtex::BibEntry>>> {
-    let content = std::fs::read_to_string(&q.path).map_err(|e| {
+    let base = PathBuf::from("projects");
+    let base_canon = base.canonicalize().map_err(|e| {
+        AppError(
+            StatusCode::BAD_REQUEST,
+            format!("Basisverzeichnis konnte nicht aufgelöst werden: {e}"),
+        )
+    })?;
+
+    let requested = base.join(&q.path);
+    let requested_canon = requested.canonicalize().map_err(|e| {
+        AppError(
+            StatusCode::BAD_REQUEST,
+            format!("BibTeX-Datei konnte nicht gelesen werden ({}): {e}", q.path),
+        )
+    })?;
+
+    if !requested_canon.starts_with(&base_canon) {
+        return Err(AppError(
+            StatusCode::BAD_REQUEST,
+            "Ungültiger Pfad außerhalb des erlaubten Verzeichnisses".to_string(),
+        ));
+    }
+
+    let content = std::fs::read_to_string(&requested_canon).map_err(|e| {
         AppError(
             StatusCode::BAD_REQUEST,
             format!("BibTeX-Datei konnte nicht gelesen werden ({}): {e}", q.path),
