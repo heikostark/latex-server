@@ -649,8 +649,37 @@ struct BibEntryUpdateBody {
     raw: String,
 }
 
+fn validate_bib_path(bib_path: &str) -> Result<PathBuf, AppError> {
+    use std::path::{Component, Path};
+
+    let p = Path::new(bib_path);
+    if bib_path.is_empty()
+        || p.is_absolute()
+        || bib_path.contains('/')
+        || bib_path.contains('\\')
+        || bib_path.contains("..")
+        || p.components().any(|c| !matches!(c, Component::Normal(_)))
+    {
+        return Err(AppError(
+            StatusCode::BAD_REQUEST,
+            "Ungültiger BibTeX-Pfad.".to_string(),
+        ));
+    }
+
+    if p.extension().and_then(|e| e.to_str()) != Some("bib") {
+        return Err(AppError(
+            StatusCode::BAD_REQUEST,
+            "Ungültige BibTeX-Datei: Erwartet .bib".to_string(),
+        ));
+    }
+
+    Ok(PathBuf::from("projects").join(p))
+}
+
 async fn update_bib_entry(Json(body): Json<BibEntryUpdateBody>) -> ApiResult<Json<serde_json::Value>> {
-    let content = std::fs::read_to_string(&body.bib_path).map_err(|e| {
+    let safe_bib_path = validate_bib_path(&body.bib_path)?;
+
+    let content = std::fs::read_to_string(&safe_bib_path).map_err(|e| {
         AppError(
             StatusCode::BAD_REQUEST,
             format!("BibTeX-Datei konnte nicht gelesen werden ({}): {e}", body.bib_path),
@@ -677,8 +706,8 @@ async fn update_bib_entry(Json(body): Json<BibEntryUpdateBody>) -> ApiResult<Jso
     new_content.push_str(&body.raw);
     new_content.push_str(&content[pos + entry.raw.len()..]);
 
-    backup_before_change(&PathBuf::from(&body.bib_path)); // .bak der Datei vor dem Bearbeiten
-    std::fs::write(&body.bib_path, new_content)?;
+    backup_before_change(&safe_bib_path); // .bak der Datei vor dem Bearbeiten
+    std::fs::write(&safe_bib_path, new_content)?;
     Ok(Json(serde_json::json!({ "ok": true })))
 }
 
