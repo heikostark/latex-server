@@ -867,11 +867,19 @@ function buildFigureSnippet(imagePath) {
 /// Escapt LaTeX-Sonderzeichen in Zellwerten, damit die eingefügte Tabelle
 /// kompilierbar bleibt.
 function escapeLatex(value) {
-  return String(value)
-    .replace(/\\/g, "\\textbackslash{}")
-    .replace(/([&%$#_{}])/g, "\\$1")
-    .replace(/~/g, "\\textasciitilde{}")
-    .replace(/\^/g, "\\textasciicircum{}");
+  const latexEscapes = {
+    "\\": "\\textbackslash{}",
+    "&": "\\&",
+    "%": "\\%",
+    "$": "\\$",
+    "#": "\\#",
+    "_": "\\_",
+    "{": "\\{",
+    "}": "\\}",
+    "~": "\\textasciitilde{}",
+    "^": "\\textasciicircum{}",
+  };
+  return String(value).replace(/[\\&%$#_{}~^]/g, (ch) => latexEscapes[ch]);
 }
 
 /// Synchrones GET (blockiert kurz, wird bewusst nur beim Drag-Start einer
