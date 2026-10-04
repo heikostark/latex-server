@@ -28,7 +28,7 @@ fn project_file_path(name: &str) -> PathBuf {
 
 pub async fn save_project(Json(config): Json<ProjectConfig>) -> ApiResult<Json<serde_json::Value>> {
     if config.name.trim().is_empty() {
-        return Err(AppError(StatusCode::BAD_REQUEST, "Projektname darf nicht leer sein.".into()));
+        return Err(AppError(StatusCode::BAD_REQUEST, "Project name must not be empty.".into()));
     }
     std::fs::create_dir_all(PROJECTS_DIR)?;
     let path = project_file_path(&config.name);
@@ -46,9 +46,9 @@ pub struct LoadQuery {
 pub async fn load_project(Query(q): Query<LoadQuery>) -> ApiResult<Json<ProjectConfig>> {
     let path = project_file_path(&q.name);
     let content = std::fs::read_to_string(&path)
-        .map_err(|e| AppError(StatusCode::NOT_FOUND, format!("Projekt '{}' nicht gefunden: {e}", q.name)))?;
+        .map_err(|e| AppError(StatusCode::NOT_FOUND, format!("Project '{}' not found: {e}", q.name)))?;
     let config: ProjectConfig = serde_json::from_str(&content)
-        .map_err(|e| AppError(StatusCode::INTERNAL_SERVER_ERROR, format!("Projektdatei beschädigt: {e}")))?;
+        .map_err(|e| AppError(StatusCode::INTERNAL_SERVER_ERROR, format!("Project file is corrupt: {e}")))?;
     Ok(Json(config))
 }
 

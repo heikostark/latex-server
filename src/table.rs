@@ -30,22 +30,22 @@ pub fn read_table(path: &Path) -> Result<TableResult, String> {
         return read_csv_table(path);
     }
 
-    let mut workbook = open_workbook_auto(path).map_err(|e| format!("Datei konnte nicht geöffnet werden: {e}"))?;
+    let mut workbook = open_workbook_auto(path).map_err(|e| format!("File could not be opened: {e}"))?;
 
     let sheet_name = workbook
         .sheet_names()
         .first()
         .cloned()
-        .ok_or_else(|| "Die Datei enthält kein Tabellenblatt.".to_string())?;
+        .ok_or_else(|| "The file contains no worksheet.".to_string())?;
 
     let range = workbook
         .worksheet_range(&sheet_name)
-        .map_err(|e| format!("Tabellenblatt konnte nicht gelesen werden: {e}"))?;
+        .map_err(|e| format!("Worksheet could not be read: {e}"))?;
 
     let mut rows_iter = range.rows();
     let headers: Vec<String> = match rows_iter.next() {
         Some(first_row) => first_row.iter().map(cell_to_string).collect(),
-        None => return Err("Die Datei enthält keine Daten.".to_string()),
+        None => return Err("The file contains no data.".to_string()),
     };
 
     let all_rows: Vec<Vec<String>> = rows_iter
@@ -69,14 +69,14 @@ pub fn read_table(path: &Path) -> Result<TableResult, String> {
 /// delimited, quote-aware) rather than relying on calamine, which does not
 /// reliably auto-detect plain CSV files.
 fn read_csv_table(path: &Path) -> Result<TableResult, String> {
-    let content = std::fs::read_to_string(path).map_err(|e| format!("CSV-Datei konnte nicht gelesen werden: {e}"))?;
+    let content = std::fs::read_to_string(path).map_err(|e| format!("CSV file could not be read: {e}"))?;
     let first_line = content.lines().next().unwrap_or("");
     let delimiter = detect_delimiter(first_line);
 
     let mut all_rows_raw = parse_csv(&content, delimiter).into_iter();
     let headers = all_rows_raw
         .next()
-        .ok_or_else(|| "Die CSV-Datei enthält keine Daten.".to_string())?;
+        .ok_or_else(|| "The CSV file contains no data.".to_string())?;
 
     let all_rows: Vec<Vec<String>> = all_rows_raw.collect();
     let total_rows = all_rows.len();

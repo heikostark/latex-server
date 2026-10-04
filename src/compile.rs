@@ -94,8 +94,8 @@ fn run_pdflatex(dir: &Path, file_name: &str) -> Result<(bool, String), crate::Ap
     let output = Command::new("pdflatex")
         .arg("-interaction=nonstopmode")
         .arg("-halt-on-error")
-        // Formatiert Fehler als "datei.tex:ZEILE: Meldung" statt nur "! Meldung",
-        // damit sich die betroffene Zeile im Editor zuverlässig markieren lässt.
+        // Formats errors as "file.tex:LINE: message" instead of just "! message",
+        // so the affected line can be reliably highlighted in the editor.
         .arg("-file-line-error")
         .arg("-output-directory")
         .arg(dir)
@@ -113,7 +113,7 @@ fn run_pdflatex(dir: &Path, file_name: &str) -> Result<(bool, String), crate::Ap
         Err(e) => Ok((
             false,
             format!(
-                "pdflatex konnte nicht gestartet werden: {e}\nIst ein LaTeX-System (z. B. TeX Live) auf dem Server installiert und im PATH?"
+                "pdflatex could not be started: {e}\nIs a LaTeX distribution (e.g. TeX Live) installed on the server and available in PATH?"
             ),
         )),
     }
@@ -132,7 +132,7 @@ fn run_bibtex(dir: &Path, file_stem: &str) -> Result<(bool, String), crate::AppE
             log.push_str(&String::from_utf8_lossy(&out.stderr));
             Ok((out.status.success(), log))
         }
-        Err(e) => Ok((false, format!("bibtex konnte nicht gestartet werden: {e}"))),
+        Err(e) => Ok((false, format!("bibtex could not be started: {e}"))),
     }
 }
 
@@ -146,11 +146,11 @@ fn parse_log(log: &str) -> (Vec<CompileIssue>, Vec<CompileIssue>) {
     for (idx, line) in lines.iter().enumerate() {
         let trimmed = line.trim_end();
 
-        // --file-line-error Format: "datei.tex:ZEILE: Meldung"
+        // --file-line-error format: "file.tex:LINE: message"
         if let Some((line_num, message)) = parse_file_line_error(trimmed) {
-            // Die "==> Fatal error occurred, ..."-Zeile ist nur eine
-            // zusätzliche Zusammenfassung derselben, bereits erfassten
-            // Fehlerzeile — nicht als eigenständigen Fehler aufnehmen.
+            // The "==> Fatal error occurred, ..." line is merely an additional
+            // summary of the same, already captured error line — do not
+            // record it as a separate error.
             if !message.starts_with("==>") {
                 errors.push(CompileIssue {
                     line: Some(line_num),
@@ -160,8 +160,8 @@ fn parse_log(log: &str) -> (Vec<CompileIssue>, Vec<CompileIssue>) {
             continue;
         }
 
-        // Fallback: klassisches "! Meldung" (+ folgende "l.ZEILE"-Zeile),
-        // falls --file-line-error aus irgendeinem Grund nicht greift.
+        // Fallback: classic "! message" (+ following "l.LINE" line), in case
+        // --file-line-error does not take effect for some reason.
         if trimmed.starts_with('!') {
             let mut msg = trimmed.trim_start_matches('!').trim().to_string();
             let mut line_num = None;
@@ -185,8 +185,8 @@ fn parse_log(log: &str) -> (Vec<CompileIssue>, Vec<CompileIssue>) {
         }
 
         if trimmed.contains("Warning--") {
-            // Typische bibtex-Warnung; bezieht sich i. d. R. auf die
-            // .bib-Datei, nicht auf eine Zeile in der .tex-Quelle.
+            // Typical bibtex warning; usually refers to the .bib file,
+            // not to a line in the .tex source.
             warnings.push(CompileIssue {
                 line: None,
                 message: trimmed.to_string(),
@@ -194,10 +194,10 @@ fn parse_log(log: &str) -> (Vec<CompileIssue>, Vec<CompileIssue>) {
         }
     }
 
-    if errors.is_empty() && log.contains("pdflatex konnte nicht gestartet werden") {
+    if errors.is_empty() && log.contains("pdflatex could not be started") {
         errors.push(CompileIssue {
             line: None,
-            message: log.lines().next().unwrap_or("Unbekannter Fehler").to_string(),
+            message: log.lines().next().unwrap_or("Unknown error").to_string(),
         });
     }
 

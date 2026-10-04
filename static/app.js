@@ -1,16 +1,16 @@
-// ---------- Globaler Zustand ----------
+// ---------- Global state ----------
 const state = {
   workingDir: "",
   currentTexPath: null,
   currentBibPath: null,
   bibEntries: [],
   dirty: false,
-  selectedTreePath: null, // per Einfachklick im Arbeitsordner ausgewählte Datei (z.B. für latexdiff)
-  expandedPaths: new Set(), // aufgeklappte Unterordner im Arbeitsordner-Baum (Standard: alle zugeklappt)
-  lastPdfPage: 1, // vor dem letzten Kompilieren angezeigte PDF-Seite (siehe compileCurrentFile)
+  selectedTreePath: null, // file selected in the working folder via a single click (e.g. for latexdiff)
+  expandedPaths: new Set(), // expanded subfolders in the working folder tree (default: all collapsed)
+  lastPdfPage: 1, // PDF page shown before the last compile (see compileCurrentFile)
 };
 
-// ---------- Elemente ----------
+// ---------- Elements ----------
 const el = {
   projectName: document.getElementById("projectName"),
   projectSelect: document.getElementById("projectSelect"),
@@ -85,12 +85,12 @@ function isTexOrTextFile(name) {
   return TEX_TEXT_EXTENSIONS.includes(fileExtension(name));
 }
 
-/// Liefert ein zum Dateityp passendes Icon; bei Ordnern abhängig vom
-/// Auf-/Zuklapp-Zustand (offener/geschlossener Ordner).
-/// Liefert das passende SVG-Symbol (id im Icon-Sprite) plus eine CSS-Klasse
-/// zur Einfärbung nach Dateityp. Bewusst kein Emoji-Text (siehe Kommentar
-/// beim Icon-Sprite in index.html) — funktioniert daher unabhängig davon,
-/// ob eine Farb-Emoji-Schriftart auf dem System installiert ist.
+/// Returns an icon matching the file type; for folders it depends on the
+/// expanded/collapsed state (open/closed folder).
+/// Returns the matching SVG symbol (id in the icon sprite) plus a CSS
+/// class for coloring by file type. Deliberately no emoji text (see the
+/// comment next to the icon sprite in index.html) — this works regardless
+/// of whether a color emoji font is installed on the system.
 function iconForNode(node, isExpanded) {
   if (node.is_dir) {
     return isExpanded
@@ -108,21 +108,21 @@ function iconForNode(node, isExpanded) {
   if (["sty", "cls", "cfg", "def"].includes(ext)) return { symbol: "icon-file", cls: "icon-config" };
   if (ext === "log") return { symbol: "icon-file-lines", cls: "icon-log" };
   if (["aux", "toc", "out", "lof", "lot", "bbl", "blg", "synctex", "fls", "fdb_latexmk", "gz"].includes(ext)) {
-    return { symbol: "icon-file", cls: "icon-build" }; // typische LaTeX-Build-Nebenprodukte
+    return { symbol: "icon-file", cls: "icon-build" }; // typical LaTeX build byproducts
   }
   if (ext === "bak") return { symbol: "icon-file", cls: "icon-backup" };
   return { symbol: "icon-file", cls: "icon-generic" };
 }
 
-/// Baut das <svg><use></use></svg>-Markup für ein Icon aus dem Sprite.
+/// Builds the <svg><use></use></svg> markup for an icon from the sprite.
 function iconSvgHtml(symbol, extraClass) {
   const cls = extraClass ? `icon ${extraClass}` : "icon";
   return `<svg class="${cls}"><use href="#${symbol}"></use></svg>`;
 }
 
-// ---------- LaTeX-Autovervollständigung ----------
+// ---------- LaTeX autocompletion ----------
 
-// Häufige LaTeX-Befehle. Wird nach dem letzten "\" vor dem Cursor gefiltert.
+// Common LaTeX commands. Filtered against the last "\" before the cursor.
 const LATEX_COMMANDS = [
   "\\documentclass", "\\usepackage", "\\begin", "\\end",
   "\\part", "\\chapter", "\\section", "\\subsection", "\\subsubsection", "\\paragraph", "\\subparagraph",
@@ -147,7 +147,7 @@ const LATEX_COMMANDS = [
   "\\input", "\\include", "\\usetikzlibrary",
 ];
 
-// Umgebungsnamen für \begin{...} / \end{...}.
+// Environment names for \begin{...} / \end{...}.
 const LATEX_ENVIRONMENTS = [
   "document", "itemize", "enumerate", "description",
   "figure", "table", "tabular", "tabularx", "array",
@@ -156,9 +156,9 @@ const LATEX_ENVIRONMENTS = [
   "abstract", "minipage", "thebibliography",
 ];
 
-/// Eigene CodeMirror-Hint-Funktion: schlägt je nach Kontext entweder
-/// LaTeX-Umgebungsnamen (nach "\begin{"/"\end{") oder LaTeX-Befehle (nach
-/// dem letzten "\") vor.
+/// Custom CodeMirror hint function: depending on context, suggests either
+/// LaTeX environment names (after "\begin{"/"\end{") or LaTeX commands
+/// (after the last "\").
 function latexHint(editor) {
   const cursor = editor.getCursor();
   const line = editor.getLine(cursor.line);
@@ -191,7 +191,7 @@ function latexHint(editor) {
   return null;
 }
 
-// ---------- CodeMirror-Editor (Bereich 2) ----------
+// ---------- CodeMirror editor (area 2) ----------
 
 let cm = null;
 
@@ -209,18 +209,18 @@ function initEditor() {
         matchBrackets: true,
         indentUnit: 2,
         tabSize: 2,
-        dragDrop: true, // erlaubt das Ablegen von gezogenem Text (z.B. \cite{}) an der Mausposition
+        dragDrop: true, // allows dropping dragged text (e.g. \cite{}) at the mouse position
         extraKeys: { "Ctrl-Space": "autocomplete" },
         hintOptions: { hint: latexHint, completeSingle: false },
-        // Eigenes Gutter für Fehler-/Warnungs-Symbole neben den Zeilennummern.
+        // Custom gutter for error/warning icons next to the line numbers.
         gutters: ["CodeMirror-linenumbers", "cm-issue-gutter"],
         value: "",
       });
       cm.on("change", () => {
         state.dirty = true;
       });
-      // Automatisches Vorschlagen von LaTeX-Befehlen/Umgebungen während des
-      // Tippens (zusätzlich zu Strg+Leertaste für manuelles Aufrufen).
+      // Automatically suggest LaTeX commands/environments while typing
+      // (in addition to Ctrl+Space for manual invocation).
       cm.on("inputRead", (instance, changeObj) => {
         if (typeof CodeMirror.showHint !== "function") return;
         if (!changeObj.text || changeObj.text.length !== 1) return;
@@ -234,16 +234,16 @@ function initEditor() {
       });
       return cm;
     } catch (e) {
-      console.error("CodeMirror-Initialisierung fehlgeschlagen, verwende einfachen Texteditor:", e);
+      console.error("CodeMirror initialization failed, using plain text editor:", e);
     }
   }
 
-  // Ausweich-Editor: eine einfache <textarea>, falls CodeMirror aus
-  // irgendeinem Grund nicht verfügbar ist (z.B. eine fehlende lokale
-  // Vendor-Datei). Bietet dieselbe kleine API (getValue/setValue/on/
-  // replaceSelection/focus/clearHistory/refresh), damit der restliche
-  // Code unverändert funktioniert — nur ohne Syntaxhervorhebung.
-  setStatus("Hinweis: Editor-Bibliothek konnte nicht geladen werden — einfacher Texteditor wird verwendet.", true);
+  // Fallback editor: a plain <textarea> in case CodeMirror is unavailable
+  // for some reason (e.g. a missing local vendor file). Offers the same
+  // small API (getValue/setValue/on/replaceSelection/focus/clearHistory/
+  // refresh) so the rest of the code keeps working unchanged — just
+  // without syntax highlighting.
+  setStatus("Note: editor library could not be loaded — using a plain text editor instead.", true);
   const textarea = document.createElement("textarea");
   textarea.className = "fallback-editor";
   textarea.spellcheck = false;
@@ -268,15 +268,15 @@ function initEditor() {
     on: (event, cb) => {
       if (event === "change") textarea.addEventListener("input", cb);
     },
-    // Bestmögliche Annäherung an Undo/Redo ohne CodeMirror: nutzt den
-    // nativen Undo-Stack des Browsers für Textfelder. Nicht in jedem
-    // Browser garantiert, aber breit unterstützt.
+    // Best-effort approximation of undo/redo without CodeMirror: uses the
+    // browser's native undo stack for text fields. Not guaranteed in every
+    // browser, but widely supported.
     undo: () => {
       textarea.focus();
       try {
         document.execCommand("undo");
       } catch (e) {
-        /* execCommand nicht verfügbar — keine Aktion möglich */
+        /* execCommand not available — no action possible */
       }
     },
     redo: () => {
@@ -284,17 +284,17 @@ function initEditor() {
       try {
         document.execCommand("redo");
       } catch (e) {
-        /* execCommand nicht verfügbar — keine Aktion möglich */
+        /* execCommand not available — no action possible */
       }
     },
-    // Keine echte Cursor-basierte Suche im Ausweich-Editor verfügbar;
-    // getSearchCursor bleibt bewusst undefiniert, damit die Suchfunktionen
-    // erkennen können, dass sie im Fallback-Modus nicht arbeiten können.
+    // No real cursor-based search available in the fallback editor;
+    // getSearchCursor is deliberately left undefined so the search
+    // functions can detect that they cannot operate in fallback mode.
   };
   return cm;
 }
 
-// Visuelles Feedback, während ein Zitat über den Editor gezogen wird.
+// Visual feedback while a citation is being dragged over the editor.
 el.editorContainer.addEventListener("dragover", (e) => {
   e.preventDefault();
   el.editorContainer.classList.add("drag-over");
@@ -307,14 +307,14 @@ el.editorContainer.addEventListener("drop", () => {
   state.dirty = true;
 });
 
-// ---------- Suchen & Ersetzen (Editor-Fußleiste) ----------
+// ---------- Search & replace (editor footer) ----------
 
 function searchSupported() {
   return !!cm && typeof cm.getSearchCursor === "function";
 }
 
-// Alle aktuell markierten Treffer (CodeMirror TextMarker), damit sie vor
-// einer Neuberechnung entfernt werden können.
+// All currently marked matches (CodeMirror TextMarker), so they can be
+// cleared before a recalculation.
 let searchMarkers = [];
 
 function clearSearchMarkers() {
@@ -322,10 +322,10 @@ function clearSearchMarkers() {
   searchMarkers = [];
 }
 
-/// Markiert JEDEN Treffer des aktuellen Suchbegriffs im Editor (nicht nur
-/// den aktuell selektierten) und aktualisiert die Trefferanzahl. Wird bei
-/// jeder Änderung des Suchfelds sowie nach Ersetzungen neu aufgerufen, da
-/// sich die Trefferpositionen dabei ändern können.
+/// Highlights EVERY match of the current search term in the editor (not
+/// just the currently selected one) and updates the match count. Called
+/// again on every change to the search field as well as after
+/// replacements, since match positions can shift then.
 function refreshSearchHighlights() {
   clearSearchMarkers();
   const query = el.searchInput.value;
@@ -339,16 +339,16 @@ function refreshSearchHighlights() {
     searchMarkers.push(cm.markText(cursor.from(), cursor.to(), { className: "cm-search-match" }));
     count++;
   }
-  el.searchMatchCount.textContent = count > 0 ? `${count} Treffer` : "Keine Treffer";
+  el.searchMatchCount.textContent = count > 0 ? `${count} match${count === 1 ? "" : "es"}` : "No matches";
 }
 
 function performFind(direction = 1) {
   if (!cm) {
-    setStatus("Bitte zuerst eine Datei im Editor öffnen.", true);
+    setStatus("Please open a file in the editor first.", true);
     return;
   }
   if (!searchSupported()) {
-    setStatus("Suche ist im einfachen Ausweich-Editor nicht verfügbar.", true);
+    setStatus("Search is not available in the plain fallback editor.", true);
     return;
   }
   const query = el.searchInput.value;
@@ -359,7 +359,7 @@ function performFind(direction = 1) {
   let found = direction > 0 ? cursor.findNext() : cursor.findPrevious();
 
   if (!found) {
-    // Kein weiterer Treffer in dieser Richtung — von vorne/hinten umlaufen.
+    // No further match in this direction — wrap around from the start/end.
     const wrapPos =
       direction > 0
         ? { line: 0, ch: 0 }
@@ -372,13 +372,13 @@ function performFind(direction = 1) {
     cm.setSelection(cursor.from(), cursor.to());
     cm.scrollIntoView({ from: cursor.from(), to: cursor.to() }, 60);
   } else {
-    setStatus(`Kein Treffer für „${query}“.`, true);
+    setStatus(`No match for "${query}".`, true);
   }
 }
 
 function replaceCurrent() {
   if (!searchSupported()) {
-    setStatus("Ersetzen ist im einfachen Ausweich-Editor nicht verfügbar.", true);
+    setStatus("Replace is not available in the plain fallback editor.", true);
     return;
   }
   const query = el.searchInput.value;
@@ -395,7 +395,7 @@ function replaceCurrent() {
 
 function replaceAllMatches() {
   if (!searchSupported()) {
-    setStatus("Ersetzen ist im einfachen Ausweich-Editor nicht verfügbar.", true);
+    setStatus("Replace is not available in the plain fallback editor.", true);
     return;
   }
   const query = el.searchInput.value;
@@ -412,7 +412,7 @@ function replaceAllMatches() {
   });
 
   if (count > 0) state.dirty = true;
-  setStatus(count > 0 ? `${count} Ersetzung(en) durchgeführt.` : `Kein Treffer für „${query}“.`, count === 0);
+  setStatus(count > 0 ? `${count} replacement${count === 1 ? "" : "s"} made.` : `No match for "${query}".`, count === 0);
   refreshSearchHighlights();
 }
 
@@ -435,11 +435,11 @@ el.replaceInput.addEventListener("keydown", (e) => {
   }
 });
 
-// ---------- Rückgängig / Wiederholen (Editor-Fußleiste) ----------
+// ---------- Undo / redo (editor footer) ----------
 
 el.btnUndo.addEventListener("click", () => {
   if (!cm) {
-    setStatus("Bitte zuerst eine Datei im Editor öffnen.", true);
+    setStatus("Please open a file in the editor first.", true);
     return;
   }
   if (typeof cm.undo === "function") cm.undo();
@@ -447,13 +447,13 @@ el.btnUndo.addEventListener("click", () => {
 
 el.btnRedo.addEventListener("click", () => {
   if (!cm) {
-    setStatus("Bitte zuerst eine Datei im Editor öffnen.", true);
+    setStatus("Please open a file in the editor first.", true);
     return;
   }
   if (typeof cm.redo === "function") cm.redo();
 });
 
-// ---------- Hilfsfunktionen ----------
+// ---------- Helper functions ----------
 
 function setStatus(msg, isError = false) {
   el.statusMsg.textContent = msg;
@@ -508,18 +508,18 @@ function showTab(tabId) {
   document.querySelectorAll(".tab-content").forEach((c) => c.classList.toggle("active", c.id === tabId));
 }
 
-// ---------- Arbeitsordner / Dateibaum (Bereich 1) ----------
+// ---------- Working folder / file tree (area 1) ----------
 
 el.btnOpenFolder.addEventListener("click", async () => {
   const dir = el.workingDirInput.value.trim();
   if (!dir) {
-    setStatus("Bitte einen Ordnerpfad angeben.", true);
+    setStatus("Please enter a folder path.", true);
     return;
   }
   await openWorkingDir(dir);
 });
 
-// ---------- Ordnerauswahl-Dialog ----------
+// ---------- Folder selection dialog ----------
 
 let modalCurrentDir = null;
 
@@ -529,7 +529,7 @@ el.btnBrowseFolder.addEventListener("click", () => {
 
 el.modalCancel.addEventListener("click", closeFolderModal);
 el.folderModal.addEventListener("click", (e) => {
-  if (e.target === el.folderModal) closeFolderModal(); // Klick auf Hintergrund
+  if (e.target === el.folderModal) closeFolderModal(); // click on the backdrop
 });
 el.modalUp.addEventListener("click", () => {
   if (modalCurrentDir) browseModalTo(modalCurrentDir, true);
@@ -556,7 +556,7 @@ async function browseModalTo(dir, goToParent) {
     const data = await res.json();
 
     if (goToParent && data.parent) {
-      // Eine Ebene höher navigieren: mit dem Elternordner neu laden.
+      // Navigate one level up: reload with the parent folder.
       await browseModalTo(data.parent, false);
       return;
     }
@@ -566,14 +566,14 @@ async function browseModalTo(dir, goToParent) {
     el.modalUp.disabled = !data.parent;
     renderModalDirs(data.dirs);
   } catch (e) {
-    setStatus(`Fehler beim Durchsuchen: ${e.message}`, true);
+    setStatus(`Error while browsing: ${e.message}`, true);
   }
 }
 
 function renderModalDirs(dirs) {
   el.modalDirList.innerHTML = "";
   if (dirs.length === 0) {
-    el.modalDirList.innerHTML = `<p class="hint">Keine Unterordner vorhanden.</p>`;
+    el.modalDirList.innerHTML = `<p class="hint">No subfolders.</p>`;
     return;
   }
   dirs.forEach((d) => {
@@ -590,22 +590,22 @@ async function openWorkingDir(dir) {
     const res = await apiGet(`/api/tree?dir=${encodeURIComponent(dir)}`);
     const tree = await res.json();
     state.workingDir = dir;
-    state.expandedPaths = new Set(); // neuer Ordner: alle Unterordner wieder zugeklappt
+    state.expandedPaths = new Set(); // new folder: collapse all subfolders again
     el.workingDirInput.value = dir;
     renderTree(tree);
-    setStatus(`Ordner geöffnet: ${dir}`);
+    setStatus(`Folder opened: ${dir}`);
     await autoLoadBibFile(tree);
     startWatchingWorkingDir(dir);
   } catch (e) {
-    setStatus(`Fehler beim Öffnen des Ordners: ${e.message}`, true);
+    setStatus(`Error opening the folder: ${e.message}`, true);
   }
 }
 
-// ---------- Dateisystem-Überwachung (automatische Synchronisation) ----------
+// ---------- Filesystem watcher (automatic synchronization) ----------
 
-// Server-Sent-Events-Verbindung, die den Ordnerbaum automatisch aktuell
-// hält, sobald sich außerhalb der App etwas im Arbeitsordner ändert
-// (Dateien angelegt/geändert/gelöscht — auch in Unterordnern).
+// Server-Sent Events connection that keeps the folder tree automatically
+// up to date whenever something changes in the working folder outside the
+// app (files created/changed/deleted — including in subfolders).
 let treeWatchSource = null;
 
 function stopWatchingWorkingDir() {
@@ -624,11 +624,11 @@ function startWatchingWorkingDir(dir) {
       refreshTree();
     });
     treeWatchSource.onerror = () => {
-      // Verbindung verloren (z.B. Server kurz neu gestartet) — der Browser
-      // versucht bei EventSource automatisch, sich erneut zu verbinden.
+      // Connection lost (e.g. server briefly restarted) — the browser
+      // automatically tries to reconnect for EventSource.
     };
   } catch (e) {
-    console.error("Dateisystem-Überwachung konnte nicht gestartet werden:", e);
+    console.error("Filesystem watcher could not be started:", e);
   }
 }
 
@@ -639,11 +639,11 @@ function renderTree(node) {
   el.fileTree.appendChild(rootUl);
 }
 
-// Verzögert das eigentliche Setzen von state.selectedTreePath kurz, damit
-// bei einem Doppelklick (der zunächst zwei normale "click"-Events auslöst,
-// bevor "dblclick" feuert) das Öffnen einer Datei im Editor nicht
-// versehentlich die zuvor bewusst getroffene Tree-Auswahl überschreibt.
-// Jeder Baumknoten bekommt dafür seinen eigenen Timer (siehe renderNode).
+// Briefly delays actually setting state.selectedTreePath so that a
+// double-click (which first fires two normal "click" events before
+// "dblclick") does not accidentally overwrite a deliberately made tree
+// selection when opening a file in the editor. Each tree node gets its
+// own timer for this (see renderNode).
 
 function renderNode(node, isRoot = false) {
   const li = document.createElement("li");
@@ -652,17 +652,17 @@ function renderNode(node, isRoot = false) {
   span.dataset.path = node.path;
   span.dataset.isDir = node.is_dir ? "1" : "0";
   span.dataset.name = node.name;
-  // Für Dateien: Verzeichnis, in dem sie liegen (für "Neue Datei hier" im Kontextmenü).
+  // For files: the directory they live in (for "New file here" in the context menu).
   span.dataset.parentDir = node.is_dir ? node.path : state.workingDir;
 
   const hasChildren = node.is_dir && node.children && node.children.length > 0;
-  // Der Arbeitsordner (Wurzel) ist immer aufgeklappt; alle Unterordner
-  // merken sich ihren Zustand in state.expandedPaths (Standard: zugeklappt).
+  // The working folder (root) is always expanded; all subfolders remember
+  // their state in state.expandedPaths (default: collapsed).
   const isExpanded = isRoot || state.expandedPaths.has(node.path);
 
-  // Auf-/Zuklapp-Pfeil (nur für Ordner mit Inhalt); bei Dateien und leeren
-  // Ordnern bleibt er als unsichtbarer Platzhalter stehen, damit alle
-  // Beschriftungen auf gleicher Höhe beginnen.
+  // Expand/collapse arrow (only for folders with content); for files and
+  // empty folders it stays as an invisible placeholder so all labels
+  // start at the same horizontal position.
   const toggle = document.createElement("span");
   toggle.className = "tree-toggle";
   if (hasChildren && !isRoot) toggle.textContent = isExpanded ? "▼" : "▶";
@@ -680,20 +680,20 @@ function renderNode(node, isRoot = false) {
   label.appendChild(nameSpan);
   span.appendChild(label);
 
-  // Eigener, pro Knoten unabhängiger Timer für die verzögerte Auswahl
-  // (siehe Kommentar oben) — wichtig: NICHT global/geteilt, sonst würde
-  // ein Doppelklick auf Datei B den noch ausstehenden Auswahl-Timer von
-  // Datei A abbrechen.
+  // Own timer, independent per node, for the delayed selection (see
+  // comment above) — important: NOT global/shared, otherwise a
+  // double-click on file B would cancel the still-pending selection
+  // timer of file A.
   let selectTimer = null;
 
   if (!node.is_dir) {
     span.title = fileInteractionHint(node.name);
 
-    // Einfacher Klick markiert die Datei visuell sofort; das Setzen von
-    // state.selectedTreePath wird kurz verzögert und bei einem
-    // nachfolgenden Doppelklick auf DIESER Datei verworfen (siehe dblclick
-    // unten). Ein Doppelklick auf eine ANDERE Datei berührt diesen Timer
-    // nicht, da er pro Knoten unabhängig ist.
+    // A single click marks the file visually right away; actually setting
+    // state.selectedTreePath is briefly delayed and cancelled if a
+    // subsequent double-click happens on THIS file (see dblclick below). A
+    // double-click on a DIFFERENT file does not touch this timer, since it
+    // is independent per node.
     span.addEventListener("click", () => {
       document.querySelectorAll(".tree-item.selected").forEach((e) => e.classList.remove("selected"));
       span.classList.add("selected");
@@ -704,11 +704,11 @@ function renderNode(node, isRoot = false) {
       }, 280);
     });
 
-    // Doppelklick ist die einheitliche "Öffnen"-Aktion, je nach Dateityp:
-    // .tex/.txt → Editor · .bib → Zitateansicht · Bilder/Tabellen → Vorschau.
-    // Die noch ausstehende Auswahl-Aktualisierung dieser Datei (siehe click
-    // oben) wird dabei verworfen, damit "Öffnen" nicht gleichzeitig die für
-    // latexdiff gemerkte Vergleichsdatei auf sich selbst verändert.
+    // Double-click is the unified "open" action, depending on file type:
+    // .tex/.txt → editor · .bib → citation view · images/tables → preview.
+    // The still-pending selection update for this file (see click above) is
+    // cancelled here, so "open" does not simultaneously change the
+    // comparison file remembered for latexdiff to itself.
     span.addEventListener("dblclick", () => {
       if (selectTimer) {
         clearTimeout(selectTimer);
@@ -717,7 +717,7 @@ function renderNode(node, isRoot = false) {
       handleFileOpen(node);
     });
 
-    // Bilder und Tabellen lassen sich zusätzlich in den Editor ziehen.
+    // Images and tables can also be dragged into the editor.
     if (isImageFile(node.name) || isTableFile(node.name)) {
       span.draggable = true;
       span.addEventListener("dragstart", (e) => handleTreeDragStart(e, node, span));
@@ -733,7 +733,7 @@ function renderNode(node, isRoot = false) {
       name: node.name,
       isDir: node.is_dir,
       parentDir: node.is_dir ? node.path : state.workingDir,
-      isRoot: isRoot, // Der Arbeitsordner selbst darf nicht umbenannt/gelöscht werden.
+      isRoot: isRoot, // The working folder itself must not be renamed/deleted.
     });
   });
 
@@ -747,8 +747,8 @@ function renderNode(node, isRoot = false) {
     li.appendChild(childUl);
   }
 
-  // Klick auf einen Ordner mit Inhalt klappt ihn auf/zu (der Wurzelordner
-  // selbst bleibt davon ausgenommen und ist immer aufgeklappt).
+  // Clicking a folder with content expands/collapses it (the root folder
+  // itself is excluded from this and is always expanded).
   if (hasChildren && !isRoot) {
     span.addEventListener("click", () => {
       const nowCollapsed = childUl.classList.toggle("collapsed");
@@ -782,26 +782,26 @@ async function handleFileOpen(node) {
     await openTablePreview(node);
   } else if (ext === "pdf") {
     window.open(`/api/pdf?path=${encodeURIComponent(node.path)}`, "_blank", "noopener,noreferrer");
-    setStatus(`PDF geöffnet: ${node.name}`);
+    setStatus(`PDF opened: ${node.name}`);
   } else {
-    setStatus(`Für „${node.name}“ ist kein Öffnen/Vorschau definiert.`, true);
+    setStatus(`No open/preview action defined for "${node.name}".`, true);
   }
 }
 
 function fileInteractionHint(name) {
-  if (isTexOrTextFile(name)) return "Doppelklick: im Editor öffnen · Rechtsklick: weitere Optionen";
-  if (fileExtension(name) === "bib") return "Doppelklick: Zitate anzeigen · Rechtsklick: weitere Optionen";
+  if (isTexOrTextFile(name)) return "Double-click: open in editor · Right-click: more options";
+  if (fileExtension(name) === "bib") return "Double-click: show citations · Right-click: more options";
   if (isImageFile(name)) {
-    return "Doppelklick: Vorschau öffnen · Ziehen in den Editor: \\figure einfügen · Rechtsklick: weitere Optionen";
+    return "Double-click: open preview · Drag into editor: insert \\figure · Right-click: more options";
   }
   if (isTableFile(name)) {
-    return "Doppelklick: Vorschau öffnen · Ziehen in den Editor: \\table einfügen · Rechtsklick: weitere Optionen";
+    return "Double-click: open preview · Drag into editor: insert \\table · Right-click: more options";
   }
-  if (fileExtension(name) === "pdf") return "Doppelklick: PDF öffnen · Rechtsklick: weitere Optionen";
-  return "Rechtsklick: weitere Optionen";
+  if (fileExtension(name) === "pdf") return "Double-click: open PDF · Right-click: more options";
+  return "Right-click: more options";
 }
 
-// ---------- Ziehen von Bildern/Tabellen in den Editor ----------
+// ---------- Dragging images/tables into the editor ----------
 
 function handleTreeDragStart(e, node, spanEl) {
   let snippet;
@@ -817,9 +817,9 @@ function handleTreeDragStart(e, node, spanEl) {
   spanEl.classList.add("dragging");
 }
 
-/// Verzeichnis, relativ zu dem eingefügte Pfade (\includegraphics etc.)
-/// aufgelöst werden: das Verzeichnis der aktuell geöffneten .tex-Datei,
-/// sonst ersatzweise der Arbeitsordner.
+/// Directory relative to which inserted paths (\includegraphics etc.) are
+/// resolved: the directory of the currently open .tex file, or the
+/// working folder as a fallback.
 function referenceDir() {
   if (state.currentTexPath) {
     const idx = state.currentTexPath.lastIndexOf("/");
@@ -828,8 +828,8 @@ function referenceDir() {
   return state.workingDir;
 }
 
-/// Berechnet den relativen Pfad von einem Verzeichnis zu einer Zieldatei
-/// (beide als absolute, mit "/" getrennte Pfade).
+/// Computes the relative path from a directory to a target file (both as
+/// absolute, "/"-separated paths).
 function relativePath(fromDir, toPath) {
   if (!fromDir) return toPath;
   const fromParts = fromDir.split("/").filter(Boolean);
@@ -841,14 +841,14 @@ function relativePath(fromDir, toPath) {
   return new Array(upCount).fill("..").concat(downParts).join("/");
 }
 
-/// Erzeugt aus einem Dateinamen einen für \label{} geeigneten Bezeichner.
+/// Builds a \label{}-suitable identifier from a file name.
 function sanitizeLabel(name) {
   const base = name.replace(/\.[^./]+$/, "");
   const cleaned = base
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
-  return cleaned || "datei";
+  return cleaned || "file";
 }
 
 function buildFigureSnippet(imagePath) {
@@ -858,34 +858,26 @@ function buildFigureSnippet(imagePath) {
     `\\begin{figure}[htbp]\n` +
     `    \\centering\n` +
     `    \\includegraphics[width=0.8\\textwidth]{${rel}}\n` +
-    `    \\caption{TODO: Beschreibung}\n` +
+    `    \\caption{TODO: description}\n` +
     `    \\label{fig:${label}}\n` +
     `\\end{figure}\n`
   );
 }
 
-/// Escapt LaTeX-Sonderzeichen in Zellwerten, damit die eingefügte Tabelle
-/// kompilierbar bleibt.
+/// Escapes LaTeX special characters in cell values so the inserted table
+/// remains compilable.
 function escapeLatex(value) {
-  const latexEscapes = {
-    "\\": "\\textbackslash{}",
-    "&": "\\&",
-    "%": "\\%",
-    "$": "\\$",
-    "#": "\\#",
-    "_": "\\_",
-    "{": "\\{",
-    "}": "\\}",
-    "~": "\\textasciitilde{}",
-    "^": "\\textasciicircum{}",
-  };
-  return String(value).replace(/[\\&%$#_{}~^]/g, (ch) => latexEscapes[ch]);
+  return String(value)
+    .replace(/\\/g, "\\textbackslash{}")
+    .replace(/([&%$#_{}])/g, "\\$1")
+    .replace(/~/g, "\\textasciitilde{}")
+    .replace(/\^/g, "\\textasciicircum{}");
 }
 
-/// Synchrones GET (blockiert kurz, wird bewusst nur beim Drag-Start einer
-/// Tabellendatei verwendet, damit die Zellwerte noch innerhalb desselben
-/// dragstart-Events in dataTransfer geschrieben werden können — ein
-/// asynchroner fetch käme dafür zu spät).
+/// Synchronous GET (blocks briefly, deliberately only used when starting to
+/// drag a table file, so the cell values can still be written to
+/// dataTransfer within the same dragstart event — an asynchronous fetch
+/// would be too late for that).
 function fetchJsonSync(url) {
   const xhr = new XMLHttpRequest();
   xhr.open("GET", url, false);
@@ -896,7 +888,7 @@ function fetchJsonSync(url) {
       const body = JSON.parse(xhr.responseText);
       if (body.error) message = body.error;
     } catch (e) {
-      /* Antwort war kein JSON — Statustext beibehalten. */
+      /* Response was not JSON — keep the status text. */
     }
     throw new Error(message);
   }
@@ -910,8 +902,8 @@ function buildTableSnippet(path, name) {
   try {
     data = fetchJsonSync(`/api/table?path=${encodeURIComponent(path)}`);
   } catch (e) {
-    setStatus(`Fehler beim Lesen der Tabelle „${name}“: ${e.message}`, true);
-    return `% Fehler beim Einlesen von ${name}: ${e.message}\n`;
+    setStatus(`Error reading table "${name}": ${e.message}`, true);
+    return `% Error reading ${name}: ${e.message}\n`;
   }
 
   const headers = data.headers;
@@ -923,16 +915,16 @@ function buildTableSnippet(path, name) {
   const bodyLines = usedRows.map((row) => row.map(escapeLatex).join(" & ") + " \\\\").join("\n        ");
   const truncNote =
     data.total_rows > usedRows.length
-      ? `    % Hinweis: nur die ersten ${usedRows.length} von ${data.total_rows} Zeilen wurden eingefügt.\n`
+      ? `    % Note: only the first ${usedRows.length} of ${data.total_rows} rows were inserted.\n`
       : "";
 
-  setStatus(`Tabelle „${name}“ eingefügt (${usedRows.length} von ${data.total_rows} Zeilen).`);
+  setStatus(`Table "${name}" inserted (${usedRows.length} of ${data.total_rows} rows).`);
 
   return (
-    `% Erfordert \\usepackage{booktabs} in der Präambel\n` +
+    `% Requires \\usepackage{booktabs} in the preamble\n` +
     `\\begin{table}[htbp]\n` +
     `    \\centering\n` +
-    `    \\caption{TODO: Beschreibung}\n` +
+    `    \\caption{TODO: description}\n` +
     `    \\label{tab:${label}}\n` +
     truncNote +
     `    \\begin{tabular}{${colSpec}}\n` +
@@ -946,16 +938,16 @@ function buildTableSnippet(path, name) {
   );
 }
 
-// ---------- Tabellenvorschau (Doppelklick) ----------
+// ---------- Table preview (double-click) ----------
 
 async function openTablePreview(node) {
-  setStatus(`Lade Tabelle „${node.name}“ …`);
+  setStatus(`Loading table "${node.name}" …`);
   try {
     const res = await apiGet(`/api/table?path=${encodeURIComponent(node.path)}`);
     const data = await res.json();
     renderTablePreview(node.name, data);
   } catch (e) {
-    setStatus(`Fehler beim Laden der Tabelle: ${e.message}`, true);
+    setStatus(`Error loading table: ${e.message}`, true);
   }
 }
 
@@ -972,12 +964,12 @@ function renderTablePreview(name, data) {
   if (data.truncated) {
     const note = document.createElement("p");
     note.className = "hint";
-    note.textContent = `Hinweis: Anzeige begrenzt auf die ersten ${data.rows.length} von ${data.total_rows} Zeilen.`;
+    note.textContent = `Note: display limited to the first ${data.rows.length} of ${data.total_rows} rows.`;
     el.tableModalBody.appendChild(note);
   }
 
   el.tableModal.style.display = "flex";
-  setStatus(`Tabelle geladen: ${name}`);
+  setStatus(`Table loaded: ${name}`);
 }
 
 function closeTableModal() {
@@ -990,7 +982,7 @@ el.tableModal.addEventListener("click", (e) => {
   if (e.target === el.tableModal) closeTableModal();
 });
 
-// ---------- Baum aktualisieren ----------
+// ---------- Refresh tree ----------
 
 async function refreshTree() {
   if (!state.workingDir) return;
@@ -999,11 +991,11 @@ async function refreshTree() {
     const tree = await res.json();
     renderTree(tree);
   } catch (e) {
-    setStatus(`Fehler beim Aktualisieren des Baums: ${e.message}`, true);
+    setStatus(`Error refreshing the tree: ${e.message}`, true);
   }
 }
 
-// ---------- Bildvorschau (Doppelklick) ----------
+// ---------- Image preview (double-click) ----------
 
 function openImagePreview(node) {
   el.imageModalTitle.textContent = node.name;
@@ -1021,13 +1013,13 @@ el.imageModal.addEventListener("click", (e) => {
   if (e.target === el.imageModal) closeImageModal();
 });
 
-// ---------- Kontextmenü (Rechtsklick: Neu / Umbenennen / Löschen) ----------
+// ---------- Context menu (right-click: New / Rename / Delete) ----------
 
 let contextMenuTarget = null;
 
-// Rechtsklick auf freie Fläche im Dateibaum (nicht auf ein Element) → nur "Neue Datei hier".
+// Right-click on empty area of the file tree (not on an element) → only "New file here".
 el.fileTree.addEventListener("contextmenu", (e) => {
-  if (e.target.closest(".tree-item")) return; // wird vom Element selbst behandelt
+  if (e.target.closest(".tree-item")) return; // handled by the element itself
   e.preventDefault();
   if (!state.workingDir) return;
   openContextMenu(e.clientX, e.clientY, { isRoot: true, parentDir: state.workingDir });
@@ -1043,7 +1035,7 @@ function openContextMenu(x, y, target) {
   el.contextMenu.querySelector('[data-action="delete"]').style.display = isRoot ? "none" : "";
 
   el.contextMenu.style.display = "block";
-  // Position im sichtbaren Bereich halten.
+  // Keep the position within the visible area.
   const rect = el.contextMenu.getBoundingClientRect();
   const clampedX = Math.min(x, window.innerWidth - rect.width - 8);
   const clampedY = Math.min(y, window.innerHeight - rect.height - 8);
@@ -1090,111 +1082,110 @@ el.contextMenu.querySelectorAll(".context-menu-item").forEach((item) => {
   });
 });
 
-// ---------- Neue .tex-Datei erstellen (aus dem Kontextmenü, siehe openContextMenu) ----------
+// ---------- Create new .tex file (from the context menu, see openContextMenu) ----------
 
 async function handleNewFile(dir) {
   if (!dir) {
-    setStatus("Bitte zuerst einen Arbeitsordner öffnen.", true);
+    setStatus("Please open a working folder first.", true);
     return;
   }
-  const name = prompt("Name der neuen .tex-Datei:", "neue-datei.tex");
+  const name = prompt("Name of the new .tex file:", "new-file.tex");
   if (!name) return;
   try {
     const result = await apiPostJson("/api/file/create", { dir, name });
-    setStatus(`Datei erstellt: ${result.path}`);
+    setStatus(`File created: ${result.path}`);
     await refreshTree();
     await loadTexFile(result.path);
   } catch (e) {
-    setStatus(`Fehler beim Erstellen der Datei: ${e.message}`, true);
+    setStatus(`Error creating the file: ${e.message}`, true);
   }
 }
 
-// ---------- Neuen Ordner erstellen (aus dem Kontextmenü, siehe openContextMenu) ----------
+// ---------- Create new folder (from the context menu, see openContextMenu) ----------
 
 async function handleNewFolder(dir) {
   if (!dir) {
-    setStatus("Bitte zuerst einen Arbeitsordner öffnen.", true);
+    setStatus("Please open a working folder first.", true);
     return;
   }
-  const name = prompt("Name des neuen Ordners:", "neuer-ordner");
+  const name = prompt("Name of the new folder:", "new-folder");
   if (!name) return;
   try {
     const result = await apiPostJson("/api/folder/create", { dir, name });
-    setStatus(`Ordner erstellt: ${result.path}`);
-    // Neu angelegten Ordner direkt aufgeklappt anzeigen (ist leer, aber
-    // so sieht man sofort, dass er da ist, ohne extra klicken zu müssen).
+    setStatus(`Folder created: ${result.path}`);
+    // Show the newly created folder expanded right away (it's empty, but
+    // this way you can see immediately that it's there without an extra click).
     state.expandedPaths.add(result.path);
     await refreshTree();
   } catch (e) {
-    setStatus(`Fehler beim Erstellen des Ordners: ${e.message}`, true);
+    setStatus(`Error creating the folder: ${e.message}`, true);
   }
 }
 
-// ---------- Diff erstellen (latexdiff) ----------
+// ---------- Create diff (latexdiff) ----------
 
 el.btnLatexDiff.addEventListener("click", () => handleLatexDiff());
 
 async function handleLatexDiff() {
   if (!state.selectedTreePath) {
-    setStatus("Bitte zuerst eine Datei im Arbeitsordner auswählen (Einfachklick).", true);
+    setStatus("Please select a file in the working folder first (single click).", true);
     return;
   }
   if (!state.currentTexPath) {
-    setStatus("Bitte zuerst eine Datei im Editor öffnen.", true);
+    setStatus("Please open a file in the editor first.", true);
     return;
   }
   if (state.selectedTreePath === state.currentTexPath) {
-    setStatus("Bitte im Arbeitsordner eine andere Datei als die im Editor geöffnete auswählen.", true);
+    setStatus("Please select a different file in the working folder than the one open in the editor.", true);
     return;
   }
 
-  // latexdiff liest von der Festplatte — daher wird der aktuelle
-  // Editor-Inhalt vorher gespeichert, damit der Diff dem entspricht, was
-  // im Editor zu sehen ist (analog zum Kompilieren).
+  // latexdiff reads from disk — so the current editor content is saved
+  // first, so the diff matches what's shown in the editor (like compiling).
   await saveCurrentTexFile();
 
-  setStatus("Erzeuge Diff …");
+  setStatus("Generating diff …");
   try {
     const result = await apiPostJson("/api/latexdiff", {
       old_path: state.selectedTreePath,
       new_path: state.currentTexPath,
     });
     if (result.success && result.diff_path) {
-      setStatus(`Diff erstellt: ${result.diff_path.split("/").pop()}`);
+      setStatus(`Diff created: ${result.diff_path.split("/").pop()}`);
       await refreshTree();
       await loadTexFile(result.diff_path);
     } else {
-      setStatus(`Diff fehlgeschlagen: ${result.log || "Unbekannter Fehler"}`, true);
+      setStatus(`Diff failed: ${result.log || "Unknown error"}`, true);
     }
   } catch (e) {
-    setStatus(`Fehler beim Erzeugen des Diffs: ${e.message}`, true);
+    setStatus(`Error generating the diff: ${e.message}`, true);
   }
 }
 
-// ---------- Umbenennen ----------
+// ---------- Rename ----------
 
 async function handleRename(target) {
-  const newName = prompt("Neuer Name:", target.name);
+  const newName = prompt("New name:", target.name);
   if (!newName || newName === target.name) return;
   try {
     const result = await apiPostJson("/api/file/rename", { path: target.path, new_name: newName });
-    setStatus(`Umbenannt in: ${newName}`);
+    setStatus(`Renamed to: ${newName}`);
     if (state.currentTexPath === target.path) state.currentTexPath = result.path;
     if (state.currentBibPath === target.path) state.currentBibPath = result.path;
     await refreshTree();
   } catch (e) {
-    setStatus(`Fehler beim Umbenennen: ${e.message}`, true);
+    setStatus(`Error renaming: ${e.message}`, true);
   }
 }
 
-// ---------- Löschen ----------
+// ---------- Delete ----------
 
 async function handleDelete(target) {
-  const label = target.isDir ? "den Ordner (inkl. Inhalt)" : "die Datei";
-  if (!confirm(`Soll ${label} „${target.name}“ wirklich gelöscht werden?`)) return;
+  const label = target.isDir ? "the folder (including its contents)" : "the file";
+  if (!confirm(`Really delete ${label} "${target.name}"?`)) return;
   try {
     await apiPostJson("/api/file/delete", { path: target.path });
-    setStatus(`Gelöscht: ${target.name}`);
+    setStatus(`Deleted: ${target.name}`);
 
     if (state.currentTexPath === target.path) {
       state.currentTexPath = null;
@@ -1208,7 +1199,7 @@ async function handleDelete(target) {
     }
     await refreshTree();
   } catch (e) {
-    setStatus(`Fehler beim Löschen: ${e.message}`, true);
+    setStatus(`Error deleting: ${e.message}`, true);
   }
 }
 
@@ -1230,7 +1221,7 @@ function findFirstBib(node) {
   return null;
 }
 
-// ---------- LaTeX-Editor (Bereich 2) ----------
+// ---------- LaTeX editor (area 2) ----------
 
 async function loadTexFile(path) {
   let content;
@@ -1238,15 +1229,14 @@ async function loadTexFile(path) {
     const res = await apiGet(`/api/file?path=${encodeURIComponent(path)}`);
     content = await res.text();
   } catch (e) {
-    setStatus(`Fehler beim Laden der Datei: ${e.message}`, true);
+    setStatus(`Error loading the file: ${e.message}`, true);
     return;
   }
 
-  // Der Zustand wird gesetzt, sobald der Dateiinhalt da ist — unabhängig
-  // davon, ob die (rein visuelle) Editor-Anzeige danach erfolgreich
-  // aufgebaut werden kann. So funktionieren Speichern/Kompilieren auch
-  // dann zuverlässig, wenn die Editor-Bibliothek aus irgendeinem Grund
-  // nicht geladen werden konnte.
+  // The state is set as soon as the file content is available —
+  // regardless of whether the (purely visual) editor display can be built
+  // successfully afterward. This way, save/compile keep working reliably
+  // even if the editor library could not be loaded for some reason.
   state.currentTexPath = path;
   state.dirty = false;
   el.editorTitle.textContent = "Editor — " + path.split("/").pop();
@@ -1256,14 +1246,14 @@ async function loadTexFile(path) {
     editor.setValue(content);
     editor.clearHistory();
     setTimeout(() => editor.refresh(), 0);
-    // Suchzustand und Fehler-/Warnungsmarkierungen zurücksetzen: sie
-    // bezogen sich auf die vorherige Datei und sind jetzt bedeutungslos.
+    // Reset search state and error/warning markers: they referred to the
+    // previous file and are now meaningless.
     clearSearchMarkers();
     clearIssueMarks();
     el.searchMatchCount.textContent = "";
-    setStatus(`Datei geladen: ${path}`);
+    setStatus(`File loaded: ${path}`);
   } catch (e) {
-    setStatus(`Datei geladen, aber Editor-Anzeige fehlgeschlagen: ${e.message}`, true);
+    setStatus(`File loaded, but editor display failed: ${e.message}`, true);
   }
 }
 
@@ -1278,79 +1268,78 @@ document.addEventListener("keydown", (e) => {
 
 async function saveCurrentTexFile(isAutoSave = false) {
   if (!state.currentTexPath || !cm) {
-    if (!isAutoSave) setStatus("Keine Datei zum Speichern ausgewählt.", true);
+    if (!isAutoSave) setStatus("No file selected to save.", true);
     return;
   }
   try {
     await apiPostJson("/api/file", { path: state.currentTexPath, content: cm.getValue() });
     state.dirty = false;
-    setStatus(isAutoSave ? "Automatisch gespeichert." : "Datei gespeichert.");
+    setStatus(isAutoSave ? "Auto-saved." : "File saved.");
   } catch (e) {
-    setStatus(`${isAutoSave ? "Automatisches Speichern" : "Speichern"} fehlgeschlagen: ${e.message}`, true);
+    setStatus(`${isAutoSave ? "Auto-save" : "Save"} failed: ${e.message}`, true);
   }
 }
 
-// ---------- Automatisches Speichern (alle 5 Minuten) ----------
+// ---------- Auto-save (every 5 minutes) ----------
 
 const AUTOSAVE_INTERVAL_MS = 5 * 60 * 1000;
 
 setInterval(() => {
-  // Nur speichern, wenn eine Datei offen ist und tatsächlich ungesicherte
-  // Änderungen vorliegen — vermeidet unnötige Schreibvorgänge/Backups.
+  // Only save if a file is open and there are actually unsaved changes —
+  // avoids unnecessary writes/backups.
   if (state.currentTexPath && state.dirty && cm) {
     saveCurrentTexFile(true);
   }
 }, AUTOSAVE_INTERVAL_MS);
 
-// ---------- Kompilieren (Bereich 3) ----------
+// ---------- Compile (area 3) ----------
 
 el.btnCompile.addEventListener("click", () => compileCurrentFile());
 
-/// Versucht, die aktuell im PDF-Betrachter angezeigte Seite auszulesen
-/// (funktioniert nur, wenn der eingebettete Browser-PDF-Viewer die Seite
-/// im URL-Fragment "#page=N" widerspiegelt — je nach Browser nicht
-/// garantiert). Gelingt das nicht, wird die zuletzt bekannte bzw. Seite 1
-/// als Ersatzwert verwendet.
+/// Tries to read the page currently shown in the PDF viewer (only works if
+/// the embedded browser PDF viewer reflects the page in the URL fragment
+/// "#page=N" — not guaranteed depending on the browser). If that fails,
+/// the last known page, or page 1, is used as a fallback value.
 function getCurrentPdfPage() {
   try {
     const href = el.pdfFrame.contentWindow.location.href;
     const match = href.match(/[#&]page=(\d+)/);
     if (match) return parseInt(match[1], 10);
   } catch (e) {
-    // Zugriff verweigert (Cross-Origin/PDF-Viewer-Interna) — kein Problem,
-    // wir fallen unten auf den zuletzt bekannten Wert zurück.
+    // Access denied (cross-origin/PDF viewer internals) — not a problem,
+    // we fall back to the last known value below.
   }
   return state.lastPdfPage || 1;
 }
 
 async function compileCurrentFile() {
   if (!state.currentTexPath) {
-    setStatus("Bitte zuerst eine .tex-Datei auswählen.", true);
+    setStatus("Please select a .tex file first.", true);
     return;
   }
 
-  // Aktuell angezeigte PDF-Seite merken, um nach dem Kompilieren dorthin
-  // zurückzuspringen (Best-Effort, siehe getCurrentPdfPage).
+  // Remember the currently shown PDF page so we can jump back to it after
+  // compiling (best effort, see getCurrentPdfPage).
   state.lastPdfPage = getCurrentPdfPage();
 
-  // Vor dem Kompilieren automatisch speichern, damit die Vorschau aktuell ist.
+  // Auto-save before compiling so the preview reflects the current content.
   await saveCurrentTexFile();
 
-  setStatus("Kompiliere …");
+  setStatus("Compiling …");
   try {
     const result = await apiPostJson("/api/compile", { path: state.currentTexPath });
     renderCompileResult(result);
   } catch (e) {
-    setStatus(`Fehler beim Kompilieren: ${e.message}`, true);
+    setStatus(`Error while compiling: ${e.message}`, true);
     el.tabErrors.innerHTML = `<div class="error-item">${escapeHtml(e.message)}</div>`;
     showTab("tab-errors");
   }
 }
 
-// ---------- Fehler-/Warnungs-Markierungen im Editor ----------
+// ---------- Error/warning markers in the editor ----------
 
-// Aktuell im Editor gesetzte Zeilenmarkierungen (Hintergrundfarbe + Gutter-
-// Symbol), damit sie vor einem erneuten Kompilieren entfernt werden können.
+// Line markers currently set in the editor (background color + gutter
+// icon), so they can be removed before the next compile.
 let issueLineMarks = [];
 
 function clearIssueMarks() {
@@ -1373,7 +1362,7 @@ function markIssueLine(lineNumber1Based, type) {
   const marker = document.createElement("span");
   marker.className = type === "error" ? "cm-issue-marker cm-issue-marker-error" : "cm-issue-marker cm-issue-marker-warning";
   marker.textContent = type === "error" ? "●" : "▲";
-  marker.title = type === "error" ? "Fehler in dieser Zeile" : "Warnung in dieser Zeile";
+  marker.title = type === "error" ? "Error on this line" : "Warning on this line";
   cm.setGutterMarker(lineIndex, "cm-issue-gutter", marker);
 
   issueLineMarks.push({ lineIndex, cls });
@@ -1388,23 +1377,23 @@ function jumpToLine(lineNumber1Based) {
 }
 
 function renderCompileResult(result) {
-  // Vorherige Zeilenmarkierungen entfernen und neu setzen.
+  // Remove previous line markers and set new ones.
   clearIssueMarks();
 
-  // Fehler / Warnungen
+  // Errors / warnings
   el.tabErrors.innerHTML = "";
   if (result.errors.length === 0 && result.warnings.length === 0) {
-    el.tabErrors.innerHTML = `<div class="success-item">${iconSvgHtml("icon-check")} Keine Fehler oder Warnungen.</div>`;
+    el.tabErrors.innerHTML = `<div class="success-item">${iconSvgHtml("icon-check")} No errors or warnings.</div>`;
   } else {
     result.errors.forEach((err) => {
       markIssueLine(err.line, "error");
       const div = document.createElement("div");
       div.className = "error-item";
-      const lineLabel = err.line ? `Zeile ${err.line}: ` : "";
+      const lineLabel = err.line ? `Line ${err.line}: ` : "";
       div.innerHTML = `${iconSvgHtml("icon-error")} ${lineLabel}${escapeHtml(err.message)}`;
       if (err.line) {
         div.classList.add("issue-item-clickable");
-        div.title = "Zu dieser Zeile im Editor springen";
+        div.title = "Jump to this line in the editor";
         div.addEventListener("click", () => jumpToLine(err.line));
       }
       el.tabErrors.appendChild(div);
@@ -1413,28 +1402,28 @@ function renderCompileResult(result) {
       markIssueLine(warn.line, "warning");
       const div = document.createElement("div");
       div.className = "warning-item";
-      const lineLabel = warn.line ? `Zeile ${warn.line}: ` : "";
+      const lineLabel = warn.line ? `Line ${warn.line}: ` : "";
       div.innerHTML = `${iconSvgHtml("icon-warning")} ${lineLabel}${escapeHtml(warn.message)}`;
       if (warn.line) {
         div.classList.add("issue-item-clickable");
-        div.title = "Zu dieser Zeile im Editor springen";
+        div.title = "Jump to this line in the editor";
         div.addEventListener("click", () => jumpToLine(warn.line));
       }
       el.tabErrors.appendChild(div);
     });
   }
 
-  // PDF — springt auf die vor dem Kompilieren gemerkte Seite zurück
-  // (siehe compileCurrentFile/getCurrentPdfPage).
+  // PDF — jumps back to the page remembered before compiling
+  // (see compileCurrentFile/getCurrentPdfPage).
   if (result.success && result.pdf_path) {
     el.pdfFrame.style.display = "block";
     const page = state.lastPdfPage || 1;
     el.pdfFrame.src = `/api/pdf?path=${encodeURIComponent(result.pdf_path)}&t=${Date.now()}#page=${page}`;
     el.tabPdf.querySelector(".hint")?.remove();
-    setStatus("Kompilierung erfolgreich.");
+    setStatus("Compilation successful.");
     showTab("tab-pdf");
   } else {
-    setStatus("Kompilierung fehlgeschlagen — siehe Reiter „Fehler“.", true);
+    setStatus("Compilation failed — see the \"Errors\" tab.", true);
     showTab("tab-errors");
   }
 }
@@ -1445,7 +1434,7 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
-// ---------- BibTeX-Quellen (Bereich 4) ----------
+// ---------- BibTeX sources (area 4) ----------
 
 async function loadBibFile(path) {
   try {
@@ -1455,22 +1444,22 @@ async function loadBibFile(path) {
     state.bibEntries = entries;
     renderBibEntries(entries);
   } catch (e) {
-    setStatus(`Fehler beim Laden der BibTeX-Datei: ${e.message}`, true);
+    setStatus(`Error loading the BibTeX file: ${e.message}`, true);
   }
 }
 
 function renderBibEntries(entries) {
   el.bibList.innerHTML = "";
   if (entries.length === 0) {
-    el.bibList.innerHTML = `<p class="hint">Keine Einträge gefunden.</p>`;
+    el.bibList.innerHTML = `<p class="hint">No entries found.</p>`;
     return;
   }
   entries.forEach((entry) => {
     const div = document.createElement("div");
     div.className = "bib-entry";
-    div.title = "Doppelklick: Link/Google Scholar öffnen · Ziehen in den Editor: \\cite{} einfügen · Rechtsklick: weitere Optionen";
+    div.title = "Double-click: open link/Google Scholar · Drag into editor: insert \\cite{} · Right-click: more options";
     div.draggable = true;
-    const title = entry.fields.title || "(ohne Titel)";
+    const title = entry.fields.title || "(no title)";
     const author = entry.fields.author || "";
     const year = entry.fields.year || "";
     div.innerHTML = `
@@ -1493,10 +1482,10 @@ function renderBibEntries(entries) {
   });
 }
 
-// ---------- Link / Google Scholar per Doppelklick öffnen ----------
+// ---------- Open link / Google Scholar on double-click ----------
 
-/// Ermittelt die beste verfügbare Quelle für einen Eintrag: ein vorhandenes
-/// url-/link-/doi-Feld, sonst eine Google-Scholar-Suche nach Titel + Autor.
+/// Determines the best available source for an entry: an existing
+/// url/link/doi field, otherwise a Google Scholar search for title + author.
 function bibEntrySourceUrl(entry) {
   const f = entry.fields || {};
   if (f.url) return { url: f.url, isScholar: false };
@@ -1513,21 +1502,21 @@ function bibEntrySourceUrl(entry) {
 function openBibSourceLink(entry) {
   const { url, isScholar } = bibEntrySourceUrl(entry);
   window.open(url, "_blank", "noopener,noreferrer");
-  setStatus(isScholar ? `Google-Scholar-Suche geöffnet für „${entry.key}“.` : `Link geöffnet: ${url}`);
+  setStatus(isScholar ? `Google Scholar search opened for "${entry.key}".` : `Link opened: ${url}`);
 }
 
 function insertCitation(key) {
   if (!cm || !state.currentTexPath) {
-    setStatus("Bitte zuerst eine .tex-Datei im Editor öffnen.", true);
+    setStatus("Please open a .tex file in the editor first.", true);
     return;
   }
   cm.replaceSelection(`\\cite{${key}}`);
   cm.focus();
   state.dirty = true;
-  setStatus(`\\cite{${key}} eingefügt.`);
+  setStatus(`\\cite{${key}} inserted.`);
 }
 
-// ---------- Kontextmenü für Zitate (Rechtsklick) ----------
+// ---------- Context menu for citations (right-click) ----------
 
 let bibContextMenuTarget = null;
 
@@ -1571,7 +1560,7 @@ el.bibContextMenu.querySelectorAll(".context-menu-item").forEach((item) => {
   });
 });
 
-// ---------- Zitat bearbeiten / neu anlegen ----------
+// ---------- Edit / create citation ----------
 
 let bibEditTarget = null;
 let bibEditMode = "edit"; // "edit" | "create"
@@ -1581,24 +1570,24 @@ function openBibEditModal(entry) {
   bibEditMode = "edit";
   bibEditTarget = entry;
   bibCreatePath = null;
-  el.bibEditTitle.textContent = `Eintrag bearbeiten — ${entry.key}`;
-  el.bibEditSave.innerHTML = `${iconSvgHtml("icon-save")} Speichern`;
+  el.bibEditTitle.textContent = `Edit entry — ${entry.key}`;
+  el.bibEditSave.innerHTML = `${iconSvgHtml("icon-save")} Save`;
   el.bibEditTextarea.value = entry.raw;
   el.bibEditModal.style.display = "flex";
   el.bibEditTextarea.focus();
 }
 
-/// Öffnet den Bearbeiten-Dialog im "Neu"-Modus mit einem Vorlagen-Eintrag,
-/// der beim Speichern an die angegebene .bib-Datei angehängt wird.
+/// Opens the edit dialog in "new" mode with a template entry that gets
+/// appended to the given .bib file when saved.
 function openBibCreateModal(bibPath) {
   const year = new Date().getFullYear();
   bibEditMode = "create";
   bibEditTarget = null;
   bibCreatePath = bibPath;
-  el.bibEditTitle.textContent = "Neuer Zitat-Eintrag";
-  el.bibEditSave.innerHTML = `${iconSvgHtml("icon-plus")} Erstellen`;
+  el.bibEditTitle.textContent = "New citation entry";
+  el.bibEditSave.innerHTML = `${iconSvgHtml("icon-plus")} Create`;
   el.bibEditTextarea.value =
-    `@article{schluessel${year},\n` +
+    `@article{key${year},\n` +
     `  author  = {},\n` +
     `  title   = {},\n` +
     `  journal = {},\n` +
@@ -1614,7 +1603,7 @@ function closeBibEditModal() {
   bibEditTarget = null;
   bibCreatePath = null;
   bibEditMode = "edit";
-  el.bibEditSave.innerHTML = `${iconSvgHtml("icon-save")} Speichern`;
+  el.bibEditSave.innerHTML = `${iconSvgHtml("icon-save")} Save`;
 }
 
 el.bibEditCancel.addEventListener("click", closeBibEditModal);
@@ -1625,7 +1614,7 @@ el.bibEditModal.addEventListener("click", (e) => {
 el.bibEditSave.addEventListener("click", async () => {
   const newRaw = el.bibEditTextarea.value.trim();
   if (!newRaw) {
-    setStatus("Der Eintrag darf nicht leer sein.", true);
+    setStatus("The entry must not be empty.", true);
     return;
   }
 
@@ -1633,12 +1622,12 @@ el.bibEditSave.addEventListener("click", async () => {
     if (!bibCreatePath) return;
     try {
       await apiPostJson("/api/bib/entry/create", { bib_path: bibCreatePath, raw: newRaw });
-      setStatus("Neuer Zitat-Eintrag hinzugefügt.");
+      setStatus("New citation entry added.");
       const path = bibCreatePath;
       closeBibEditModal();
       await loadBibFile(path);
     } catch (e) {
-      setStatus(`Fehler beim Erstellen des Eintrags: ${e.message}`, true);
+      setStatus(`Error creating the entry: ${e.message}`, true);
     }
     return;
   }
@@ -1650,38 +1639,38 @@ el.bibEditSave.addEventListener("click", async () => {
       original_key: bibEditTarget.key,
       raw: newRaw,
     });
-    setStatus(`Eintrag „${bibEditTarget.key}“ gespeichert.`);
+    setStatus(`Entry "${bibEditTarget.key}" saved.`);
     closeBibEditModal();
     await loadBibFile(state.currentBibPath);
   } catch (e) {
-    setStatus(`Fehler beim Speichern des Eintrags: ${e.message}`, true);
+    setStatus(`Error saving the entry: ${e.message}`, true);
   }
 });
 
-// ---------- Neuer Zitat-Eintrag (Button "＋ Neu" in Bereich 4) ----------
+// ---------- New citation entry (button "+ New" in area 4) ----------
 
 el.btnNewBibEntry.addEventListener("click", () => handleNewBibEntry());
 
 async function handleNewBibEntry() {
   if (!state.workingDir) {
-    setStatus("Bitte zuerst einen Arbeitsordner öffnen.", true);
+    setStatus("Please open a working folder first.", true);
     return;
   }
 
   let bibPath = state.currentBibPath;
 
   if (!bibPath) {
-    const name = (prompt("Name der BibTeX-Datei:", "referenzen.bib") || "").trim();
+    const name = (prompt("Name of the BibTeX file:", "references.bib") || "").trim();
     if (!name) return;
     bibPath = state.workingDir.endsWith("/") ? state.workingDir + name : `${state.workingDir}/${name}`;
     try {
-      // Legt die Datei an, falls sie noch nicht existiert. Existiert sie
-      // bereits (409), wird einfach die vorhandene Datei weiterverwendet.
+      // Creates the file if it doesn't exist yet. If it already exists
+      // (409), the existing file is simply reused.
       const result = await apiPostJson("/api/file/create", { dir: state.workingDir, name });
       bibPath = result.path;
       await refreshTree();
     } catch (e) {
-      // Vermutlich existiert die Datei schon — mit dem berechneten Pfad weiterarbeiten.
+      // The file presumably already exists — continue with the computed path.
     }
     state.currentBibPath = bibPath;
   }
@@ -1689,30 +1678,30 @@ async function handleNewBibEntry() {
   openBibCreateModal(bibPath);
 }
 
-// ---------- Zitat löschen ----------
+// ---------- Delete citation ----------
 
 async function handleDeleteBibEntry(entry) {
   if (!state.currentBibPath) return;
-  if (!confirm(`Soll der Eintrag „${entry.key}“ wirklich gelöscht werden?`)) return;
+  if (!confirm(`Really delete the entry "${entry.key}"?`)) return;
   try {
     await apiPostJson("/api/bib/entry/delete", {
       bib_path: state.currentBibPath,
       key: entry.key,
     });
-    setStatus(`Eintrag „${entry.key}“ gelöscht.`);
+    setStatus(`Entry "${entry.key}" deleted.`);
     await loadBibFile(state.currentBibPath);
   } catch (e) {
-    setStatus(`Fehler beim Löschen des Eintrags: ${e.message}`, true);
+    setStatus(`Error deleting the entry: ${e.message}`, true);
   }
 }
 
-// ---------- Projekt laden / speichern ----------
+// ---------- Load / save project ----------
 
 async function refreshProjectList() {
   try {
     const res = await apiGet("/api/project/list");
     const names = await res.json();
-    el.projectSelect.innerHTML = `<option value="">– Projekt laden –</option>`;
+    el.projectSelect.innerHTML = `<option value="">– Load project –</option>`;
     names.forEach((n) => {
       const opt = document.createElement("option");
       opt.value = n;
@@ -1720,18 +1709,18 @@ async function refreshProjectList() {
       el.projectSelect.appendChild(opt);
     });
   } catch (e) {
-    // Stilles Fehlschlagen ist hier ok — die Liste ist nur eine Komfortfunktion.
+    // Failing silently here is fine — the list is just a convenience feature.
   }
 }
 
 el.btnSaveProject.addEventListener("click", async () => {
   const name = el.projectName.value.trim();
   if (!name) {
-    setStatus("Bitte einen Projektnamen angeben.", true);
+    setStatus("Please enter a project name.", true);
     return;
   }
   if (!state.workingDir) {
-    setStatus("Bitte zuerst einen Arbeitsordner öffnen.", true);
+    setStatus("Please open a working folder first.", true);
     return;
   }
   try {
@@ -1741,17 +1730,17 @@ el.btnSaveProject.addEventListener("click", async () => {
       tex_file: state.currentTexPath,
       bib_file: state.currentBibPath,
     });
-    setStatus(`Projekt "${name}" gespeichert.`);
+    setStatus(`Project "${name}" saved.`);
     refreshProjectList();
   } catch (e) {
-    setStatus(`Fehler beim Speichern des Projekts: ${e.message}`, true);
+    setStatus(`Error saving the project: ${e.message}`, true);
   }
 });
 
 el.btnLoadProject.addEventListener("click", async () => {
   const name = el.projectSelect.value || el.projectName.value.trim();
   if (!name) {
-    setStatus("Bitte ein Projekt auswählen oder Namen eingeben.", true);
+    setStatus("Please select a project or enter a name.", true);
     return;
   }
   try {
@@ -1765,12 +1754,12 @@ el.btnLoadProject.addEventListener("click", async () => {
     if (config.bib_file) {
       await loadBibFile(config.bib_file);
     }
-    setStatus(`Projekt "${config.name}" geladen.`);
+    setStatus(`Project "${config.name}" loaded.`);
   } catch (e) {
-    setStatus(`Fehler beim Laden des Projekts: ${e.message}`, true);
+    setStatus(`Error loading the project: ${e.message}`, true);
   }
 });
 
-// ---------- Initialisierung ----------
+// ---------- Initialization ----------
 
 refreshProjectList();

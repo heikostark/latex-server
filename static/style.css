@@ -16,10 +16,10 @@
 
 * { box-sizing: border-box; }
 
-/* SVG-Icons: feste Größe, folgen per currentColor immer der Textfarbe des
-   umgebenden Elements (Buttons, Kontextmenü-Einträge, farbige Status-
-   meldungen, ausgewählte/weiße Baumzeilen, …) — schriftartunabhängig,
-   im Gegensatz zu Emoji-Icons. */
+/* SVG icons: fixed size, always follow the text color of the surrounding
+   element via currentColor (buttons, context menu entries, colored status
+   messages, selected/white tree rows, …) — independent of installed fonts,
+   unlike emoji icons. */
 .icon {
   width: 14px;
   height: 14px;
@@ -30,7 +30,7 @@
 .icon-lg { width: 18px; height: 18px; }
 .icon-sm { width: 12px; height: 12px; }
 
-/* Farbliche Unterscheidung der Datei-Icons im Arbeitsordner nach Typ. */
+/* Color-coding of the file icons in the working folder by file type. */
 .tree-icon .icon-folder { color: #eab308; }
 .tree-icon .icon-tex { color: #2563eb; }
 .tree-icon .icon-bib { color: #7c3aed; }
@@ -42,8 +42,8 @@
 .tree-icon .icon-build { color: #9ca3af; }
 .tree-icon .icon-backup { color: #d97706; }
 .tree-icon .icon-generic { color: #6b7280; }
-/* Im ausgewählten (blau hinterlegten) Zustand sollen alle Datei-Icons
-   weiß erscheinen, damit sie auf dem farbigen Hintergrund lesbar bleiben. */
+/* In the selected (blue highlighted) state all file icons should appear
+   white so that they stay readable on the colored background. */
 .tree-item.selected .tree-icon .icon { color: #fff; }
 
 html, body {
@@ -55,7 +55,7 @@ html, body {
   background: var(--bg-app);
 }
 
-/* ---------- Buttonleiste ---------- */
+/* ---------- Toolbar ---------- */
 
 #toolbar {
   height: var(--bar-height);
@@ -116,7 +116,7 @@ html, body {
 }
 .status-msg.error { color: #ffb4b4; }
 
-/* ---------- Workspace: vier Bereiche ---------- */
+/* ---------- Workspace: four areas ---------- */
 
 #workspace {
   display: flex;
@@ -154,9 +154,9 @@ html, body {
   gap: 6px;
 }
 
-/* Der Titeltext darf schrumpfen/abgeschnitten werden (mit "…"), damit
-   Buttons und Icons daneben in schmalen Spalten (Bereich 1/4, je 10%
-   Breite) niemals durch das "overflow: hidden" von .area verdeckt werden. */
+/* The title text may shrink/be truncated (with "…") so that buttons and
+   icons next to it are never hidden by .area's "overflow: hidden" in narrow
+   columns (areas 1/4, 10% width each). */
 .header-label {
   flex: 1 1 auto;
   min-width: 0;
@@ -202,7 +202,7 @@ html, body {
 
 .hint { color: var(--muted); font-size: 12px; }
 
-/* ---------- Dateibaum ---------- */
+/* ---------- File tree ---------- */
 
 #fileTree ul {
   list-style: none;
@@ -286,15 +286,15 @@ html, body {
   line-height: 1.5;
 }
 
-/* Hervorhebung ALLER Suchtreffer (nicht nur des aktuell selektierten,
-   der zusätzlich über CodeMirrors normale Selektionsfarbe abgesetzt ist). */
+/* Highlighting of ALL search matches (not just the currently selected one,
+   which is additionally set apart by CodeMirror's normal selection color). */
 .cm-search-match {
   background-color: #fff2a8;
   border-radius: 2px;
 }
 
-/* Markierung von Zeilen mit Kompilierfehlern/-warnungen (siehe Reiter
-   "Fehler" in Bereich 3, nach -file-line-error ausgewertet). */
+/* Marking of lines with compile errors/warnings (see the "Errors" tab in
+   area 3, evaluated via -file-line-error). */
 .cm-error-line {
   background-color: #fde3e3;
 }
@@ -313,7 +313,7 @@ html, body {
 .cm-issue-marker-error { color: var(--error); }
 .cm-issue-marker-warning { color: var(--warning); }
 
-/* ---------- Fußleisten (Bereich 1 + Bereich 2): einheitliche Höhe wie der Header ---------- */
+/* ---------- Footers (area 1 + area 2): same height as the header ---------- */
 
 .area-footer {
   height: var(--area-header-height);
@@ -372,7 +372,7 @@ html, body {
   min-width: 8px;
 }
 
-/* ---------- Tabs (PDF / Fehler) ---------- */
+/* ---------- Tabs (PDF / errors) ---------- */
 
 .tabs {
   height: var(--area-header-height);
@@ -447,7 +447,7 @@ html, body {
   padding: 8px;
 }
 
-/* ---------- BibTeX-Liste ---------- */
+/* ---------- BibTeX list ---------- */
 
 .bib-entry {
   border-bottom: 1px solid #eee;
@@ -497,7 +497,7 @@ html, body {
   box-sizing: border-box;
 }
 
-/* ---------- Ordnerauswahl-Dialog ---------- */
+/* ---------- Folder selection dialog ---------- */
 
 .modal-overlay {
   position: fixed;
@@ -597,7 +597,7 @@ html, body {
 }
 .modal-actions button.primary:hover { background: var(--accent-hover); }
 
-/* ---------- Kontextmenü (Dateibaum) ---------- */
+/* ---------- Context menu (file tree) ---------- */
 
 .context-menu {
   position: fixed;
@@ -621,7 +621,7 @@ html, body {
 .context-menu-item.danger { color: var(--error); }
 .context-menu-item.danger:hover { background: var(--error-bg); }
 
-/* ---------- Bildvorschau-Dialog ---------- */
+/* ---------- Image preview dialog ---------- */
 
 .image-modal {
   width: auto;
@@ -645,7 +645,7 @@ html, body {
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.15);
 }
 
-/* ---------- Tabellenvorschau-Dialog ---------- */
+/* ---------- Table preview dialog ---------- */
 
 .table-modal {
   width: 720px;

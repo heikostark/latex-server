@@ -24,37 +24,37 @@ pub fn watch_directory(dir: &Path, tx: tokio_mpsc::Sender<()>) {
     ) {
         Ok(w) => w,
         Err(e) => {
-            eprintln!("Warnung: Dateisystem-Überwachung konnte nicht gestartet werden: {e}");
+            eprintln!("Warning: filesystem watcher could not be started: {e}");
             return;
         }
     };
 
     if let Err(e) = watcher.watch(dir, RecursiveMode::Recursive) {
-        eprintln!("Warnung: Ordner konnte nicht überwacht werden ({}): {e}", dir.display());
+        eprintln!("Warning: folder could not be watched ({}): {e}", dir.display());
         return;
     }
 
     loop {
-        // Client-Verbindung geschlossen? Dann Überwachung sauber beenden,
-        // statt den Thread für immer blockiert zu lassen.
+        // Client connection closed? Then shut the watcher down cleanly
+        // instead of leaving the thread blocked forever.
         if tx.is_closed() {
             break;
         }
 
         match raw_rx.recv_timeout(Duration::from_secs(1)) {
             Ok(()) => {
-                // Kurze Entprellung: weitere Ereignisse im selben Zeitfenster
-                // sammeln, damit z.B. ein Kompilierlauf (der mehrere Dateien
-                // kurz hintereinander schreibt) nur EINE Benachrichtigung auslöst.
+                // Short debounce: collect further events in the same time window
+                // so that e.g. a compile run (which writes several files in quick
+                // succession) triggers only ONE notification.
                 while raw_rx.recv_timeout(Duration::from_millis(300)).is_ok() {}
                 if tx.blocking_send(()).is_err() {
-                    break; // Client hat inzwischen getrennt.
+                    break; // The client has disconnected in the meantime.
                 }
             }
-            Err(std_mpsc::RecvTimeoutError::Timeout) => continue, // erneut prüfen, ob tx noch offen ist
-            Err(std_mpsc::RecvTimeoutError::Disconnected) => break, // Watcher-Callback wurde gedroppt
+            Err(std_mpsc::RecvTimeoutError::Timeout) => continue, // check again whether tx is still open
+            Err(std_mpsc::RecvTimeoutError::Disconnected) => break, // watcher callback was dropped
         }
     }
-    // `watcher` wird hier gedroppt, wodurch das zugrunde liegende inotify-Watch
-    // automatisch entfernt wird.
+    // `watcher` is dropped here, which automatically removes the underlying
+    // inotify watch.
 }

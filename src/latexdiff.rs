@@ -34,7 +34,7 @@ pub fn run_latexdiff(old_path: &Path, new_path: &Path) -> DiffOutcome {
                     Err(e) => DiffOutcome {
                         success: false,
                         diff_path: None,
-                        log: format!("Diff-Datei konnte nicht geschrieben werden: {e}\n{stderr}"),
+                        log: format!("Diff file could not be written: {e}\n{stderr}"),
                     },
                 }
             } else {
@@ -49,7 +49,7 @@ pub fn run_latexdiff(old_path: &Path, new_path: &Path) -> DiffOutcome {
             success: false,
             diff_path: None,
             log: format!(
-                "latexdiff konnte nicht gestartet werden: {e}\nIst latexdiff (Teil der meisten TeX-Live-Installationen, Paket \"texlive-extra-utils\" bzw. \"latexdiff\") im PATH des Servers installiert?"
+                "latexdiff could not be started: {e}\nIs latexdiff (part of most TeX Live installations, package \"texlive-extra-utils\" or \"latexdiff\") installed and available in the server's PATH?"
             ),
         },
     }

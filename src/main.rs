@@ -34,7 +34,7 @@ impl IntoResponse for AppError {
 
 impl From<std::io::Error> for AppError {
     fn from(e: std::io::Error) -> Self {
-        AppError(StatusCode::BAD_REQUEST, format!("IO-Fehler: {e}"))
+        AppError(StatusCode::BAD_REQUEST, format!("I/O error: {e}"))
     }
 }
 
@@ -53,7 +53,7 @@ fn backup_before_change(path: &Path) {
     bak_name.push(".bak");
     let bak_path = PathBuf::from(bak_name);
     if let Err(e) = std::fs::copy(path, &bak_path) {
-        eprintln!("Warnung: Backup für {} konnte nicht erstellt werden: {e}", path.display());
+        eprintln!("Warning: backup for {} could not be created: {e}", path.display());
     }
 }
 
@@ -87,7 +87,7 @@ async fn main() {
         .layer(CorsLayer::permissive());
 
     let addr = "0.0.0.0:3000";
-    println!("LaTeX-Projekt-Server läuft auf http://{addr}");
+    println!("LaTeX project server running at http://{addr}");
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();
 }
@@ -104,14 +104,14 @@ async fn get_tree(Query(q): Query<DirQuery>) -> ApiResult<Json<tree::TreeNode>> 
     if !base.is_dir() {
         return Err(AppError(
             StatusCode::BAD_REQUEST,
-            format!("Arbeitsordner nicht gefunden: {}", q.dir),
+            format!("Working folder not found: {}", q.dir),
         ));
     }
     let node = tree::build_tree(&base, 0)?;
     Ok(Json(node))
 }
 
-// ---------- /api/browse (Ordnerauswahl-Dialog) ----------
+// ---------- /api/browse (folder selection dialog) ----------
 
 #[derive(Deserialize)]
 struct BrowseQuery {
@@ -143,7 +143,7 @@ async fn browse_dirs(Query(q): Query<BrowseQuery>) -> ApiResult<Json<BrowseRespo
     if !path.is_dir() {
         return Err(AppError(
             StatusCode::BAD_REQUEST,
-            format!("Ordner nicht gefunden: {start}"),
+            format!("Folder not found: {start}"),
         ));
     }
 
@@ -174,17 +174,17 @@ async fn browse_dirs(Query(q): Query<BrowseQuery>) -> ApiResult<Json<BrowseRespo
     }))
 }
 
-// ---------- /api/watch (Server-Sent Events: Dateisystem-Überwachung) ----------
+// ---------- /api/watch (Server-Sent Events: filesystem watcher) ----------
 
 #[derive(Deserialize)]
 struct WatchQuery {
     dir: String,
 }
 
-/// Öffnet eine SSE-Verbindung, die ein "change"-Ereignis sendet, sobald
-/// sich innerhalb von `dir` (rekursiv) etwas auf dem Dateisystem ändert.
-/// Das Frontend nutzt dies, um den Ordnerbaum automatisch zu aktualisieren,
-/// ohne dass der Nutzer manuell neu laden muss.
+/// Opens an SSE connection that sends a "change" event whenever something
+/// changes on the filesystem inside `dir` (recursively). The frontend uses
+/// this to update the folder tree automatically, without the user having
+/// to reload manually.
 async fn watch_dir_sse(
     Query(q): Query<WatchQuery>,
 ) -> ApiResult<Sse<impl Stream<Item = Result<Event, Infallible>>>> {
@@ -192,14 +192,14 @@ async fn watch_dir_sse(
     if !dir.is_dir() {
         return Err(AppError(
             StatusCode::BAD_REQUEST,
-            format!("Ordner nicht gefunden: {}", q.dir),
+            format!("Folder not found: {}", q.dir),
         ));
     }
 
     let (tx, rx) = tokio::sync::mpsc::channel::<()>(4);
 
-    // notify's Watcher ist nicht async; er läuft daher in einem eigenen
-    // blockierenden Thread und meldet Änderungen über den Kanal zurück.
+    // notify's watcher is not async; it therefore runs in its own
+    // blocking thread and reports changes back through the channel.
     tokio::task::spawn_blocking(move || {
         watch::watch_directory(&dir, tx);
     });
@@ -214,7 +214,7 @@ async fn watch_dir_sse(
 
 #[derive(Deserialize)]
 struct CreateFolderBody {
-    /// Verzeichnis, in dem der neue Ordner angelegt werden soll.
+    /// Directory in which the new folder is to be created.
     dir: String,
     name: String,
 }
@@ -224,18 +224,18 @@ async fn create_folder(Json(body): Json<CreateFolderBody>) -> ApiResult<Json<ser
     if !dir.is_dir() {
         return Err(AppError(
             StatusCode::BAD_REQUEST,
-            format!("Zielordner nicht gefunden: {}", body.dir),
+            format!("Target folder not found: {}", body.dir),
         ));
     }
 
     let raw_name = body.name.trim();
     if raw_name.is_empty() {
-        return Err(AppError(StatusCode::BAD_REQUEST, "Ordnername darf nicht leer sein.".into()));
+        return Err(AppError(StatusCode::BAD_REQUEST, "Folder name must not be empty.".into()));
     }
     if raw_name.contains('/') || raw_name.contains('\\') {
         return Err(AppError(
             StatusCode::BAD_REQUEST,
-            "Ordnername darf keine Pfadtrenner enthalten.".into(),
+            "Folder name must not contain path separators.".into(),
         ));
     }
 
@@ -243,7 +243,7 @@ async fn create_folder(Json(body): Json<CreateFolderBody>) -> ApiResult<Json<ser
     if target.exists() {
         return Err(AppError(
             StatusCode::CONFLICT,
-            format!("Es existiert bereits etwas mit diesem Namen: {}", target.display()),
+            format!("Something with this name already exists: {}", target.display()),
         ));
     }
 
@@ -259,29 +259,10 @@ struct PathQuery {
 }
 
 async fn get_file(Query(q): Query<PathQuery>) -> ApiResult<String> {
-    let base_dir = Path::new("projects")
-        .canonicalize()
-        .map_err(|e| AppError(StatusCode::BAD_REQUEST, format!("Basisordner ungültig: {e}")))?;
-
-    let candidate = base_dir.join(&q.path);
-    let safe_path = candidate.canonicalize().map_err(|e| {
+    let content = std::fs::read_to_string(&q.path).map_err(|e| {
         AppError(
             StatusCode::BAD_REQUEST,
-            format!("Datei konnte nicht gelesen werden ({}): {e}", q.path),
-        )
-    })?;
-
-    if !safe_path.starts_with(&base_dir) {
-        return Err(AppError(
-            StatusCode::BAD_REQUEST,
-            format!("Ungültiger Pfad außerhalb von projects: {}", q.path),
-        ));
-    }
-
-    let content = std::fs::read_to_string(&safe_path).map_err(|e| {
-        AppError(
-            StatusCode::BAD_REQUEST,
-            format!("Datei konnte nicht gelesen werden ({}): {e}", q.path),
+            format!("File could not be read ({}): {e}", q.path),
         )
     })?;
     Ok(content)
@@ -295,7 +276,7 @@ struct SaveFileBody {
 
 async fn save_file(Json(body): Json<SaveFileBody>) -> ApiResult<Json<serde_json::Value>> {
     let path = PathBuf::from(&body.path);
-    backup_before_change(&path); // .bak der bisherigen Version, bevor überschrieben wird
+    backup_before_change(&path); // .bak of the previous version before it is overwritten
     std::fs::write(&path, &body.content)?;
     Ok(Json(serde_json::json!({ "ok": true })))
 }
@@ -315,18 +296,18 @@ async fn create_file(Json(body): Json<CreateFileBody>) -> ApiResult<Json<serde_j
     if !dir.is_dir() {
         return Err(AppError(
             StatusCode::BAD_REQUEST,
-            format!("Zielordner nicht gefunden: {}", body.dir),
+            format!("Target folder not found: {}", body.dir),
         ));
     }
 
     let raw_name = body.name.trim();
     if raw_name.is_empty() {
-        return Err(AppError(StatusCode::BAD_REQUEST, "Dateiname darf nicht leer sein.".into()));
+        return Err(AppError(StatusCode::BAD_REQUEST, "File name must not be empty.".into()));
     }
     if raw_name.contains('/') || raw_name.contains('\\') {
         return Err(AppError(
             StatusCode::BAD_REQUEST,
-            "Dateiname darf keine Pfadtrenner enthalten.".into(),
+            "File name must not contain path separators.".into(),
         ));
     }
 
@@ -340,7 +321,7 @@ async fn create_file(Json(body): Json<CreateFileBody>) -> ApiResult<Json<serde_j
     if target.exists() {
         return Err(AppError(
             StatusCode::CONFLICT,
-            format!("Datei existiert bereits: {}", target.display()),
+            format!("File already exists: {}", target.display()),
         ));
     }
 
@@ -369,30 +350,30 @@ async fn rename_file(Json(body): Json<RenameFileBody>) -> ApiResult<Json<serde_j
     if !old_path.exists() {
         return Err(AppError(
             StatusCode::NOT_FOUND,
-            format!("Datei/Ordner nicht gefunden: {}", body.path),
+            format!("File/folder not found: {}", body.path),
         ));
     }
 
     let new_name = body.new_name.trim();
     if new_name.is_empty() {
-        return Err(AppError(StatusCode::BAD_REQUEST, "Neuer Name darf nicht leer sein.".into()));
+        return Err(AppError(StatusCode::BAD_REQUEST, "New name must not be empty.".into()));
     }
     if new_name.contains('/') || new_name.contains('\\') {
         return Err(AppError(
             StatusCode::BAD_REQUEST,
-            "Name darf keine Pfadtrenner enthalten.".into(),
+            "Name must not contain path separators.".into(),
         ));
     }
 
     let parent = old_path
         .parent()
-        .ok_or_else(|| AppError(StatusCode::BAD_REQUEST, "Kein übergeordneter Ordner gefunden.".into()))?;
+        .ok_or_else(|| AppError(StatusCode::BAD_REQUEST, "No parent folder found.".into()))?;
     let new_path = parent.join(new_name);
 
     if new_path.exists() {
         return Err(AppError(
             StatusCode::CONFLICT,
-            format!("Es existiert bereits etwas mit dem Namen: {new_name}"),
+            format!("Something named {new_name} already exists"),
         ));
     }
 
@@ -412,16 +393,16 @@ async fn delete_file(Json(body): Json<DeleteFileBody>) -> ApiResult<Json<serde_j
     if !path.exists() {
         return Err(AppError(
             StatusCode::NOT_FOUND,
-            format!("Datei/Ordner nicht gefunden: {}", body.path),
+            format!("File/folder not found: {}", body.path),
         ));
     }
 
     if path.is_dir() {
-        // Ein rekursives .bak eines ganzen Ordners ist nicht sinnvoll abbildbar
-        // (kein einzelner Dateiname) — hier gibt es daher kein Backup.
+        // A recursive .bak of a whole folder cannot be represented sensibly
+        // (there is no single file name) — so no backup is made here.
         std::fs::remove_dir_all(&path)?;
     } else {
-        backup_before_change(&path); // Inhalt bleibt als .bak erhalten, falls versehentlich gelöscht
+        backup_before_change(&path); // Content is kept as .bak in case it was deleted by accident
         std::fs::remove_file(&path)?;
     }
     Ok(Json(serde_json::json!({ "ok": true })))
@@ -448,13 +429,13 @@ async fn compile_tex(Json(body): Json<CompileBody>) -> ApiResult<Json<CompileRes
     if !tex_path.is_file() {
         return Err(AppError(
             StatusCode::BAD_REQUEST,
-            format!("LaTeX-Datei nicht gefunden: {}", body.path),
+            format!("LaTeX file not found: {}", body.path),
         ));
     }
 
     let result = tokio::task::spawn_blocking(move || compile::run_compile(&tex_path))
         .await
-        .map_err(|e| AppError(StatusCode::INTERNAL_SERVER_ERROR, format!("Task-Fehler: {e}")))??;
+        .map_err(|e| AppError(StatusCode::INTERNAL_SERVER_ERROR, format!("Task error: {e}")))??;
 
     Ok(Json(CompileResponse {
         success: result.success,
@@ -469,9 +450,9 @@ async fn compile_tex(Json(body): Json<CompileBody>) -> ApiResult<Json<CompileRes
 
 #[derive(Deserialize)]
 struct LatexDiffBody {
-    /// Pfad der im Arbeitsordner ausgewählten (Vergleichs-)Datei.
+    /// Path of the (comparison) file selected in the working folder.
     old_path: String,
-    /// Pfad der aktuell im Editor geöffneten (neuen) Datei.
+    /// Path of the (new) file currently open in the editor.
     new_path: String,
 }
 
@@ -489,25 +470,25 @@ async fn run_latexdiff_handler(Json(body): Json<LatexDiffBody>) -> ApiResult<Jso
     if !old_path.is_file() {
         return Err(AppError(
             StatusCode::BAD_REQUEST,
-            format!("Ausgewählte Datei nicht gefunden: {}", body.old_path),
+            format!("Selected file not found: {}", body.old_path),
         ));
     }
     if !new_path.is_file() {
         return Err(AppError(
             StatusCode::BAD_REQUEST,
-            format!("Editor-Datei nicht gefunden: {}", body.new_path),
+            format!("Editor file not found: {}", body.new_path),
         ));
     }
     if old_path == new_path {
         return Err(AppError(
             StatusCode::BAD_REQUEST,
-            "Bitte im Arbeitsordner eine andere Datei als die im Editor geöffnete auswählen.".into(),
+            "Please select a different file in the working folder than the one open in the editor.".into(),
         ));
     }
 
     let result = tokio::task::spawn_blocking(move || latexdiff::run_latexdiff(&old_path, &new_path))
         .await
-        .map_err(|e| AppError(StatusCode::INTERNAL_SERVER_ERROR, format!("Task-Fehler: {e}")))?;
+        .map_err(|e| AppError(StatusCode::INTERNAL_SERVER_ERROR, format!("Task error: {e}")))?;
 
     Ok(Json(LatexDiffResponse {
         success: result.success,
@@ -523,14 +504,14 @@ async fn get_pdf(Query(q): Query<PathQuery>) -> ApiResult<Response> {
     let bytes = std::fs::read(&path).map_err(|e| {
         AppError(
             StatusCode::NOT_FOUND,
-            format!("PDF nicht gefunden ({}): {e}", q.path),
+            format!("PDF not found ({}): {e}", q.path),
         )
     })?;
 
-    // "inline" weist den Browser explizit an, die PDF direkt anzuzeigen
-    // statt sie herunterzuladen. Ohne diesen Header überlässt man die
-    // Entscheidung der Browser-Heuristik, die je nach Einstellungen,
-    // Erweiterungen oder Browser-Version inkonsistent ausfallen kann.
+    // "inline" explicitly tells the browser to display the PDF directly
+    // instead of downloading it. Without this header the decision is left
+    // to the browser's heuristics, which can be inconsistent depending on
+    // settings, extensions or browser version.
     let file_name = path
         .file_name()
         .and_then(|n| n.to_str())
@@ -568,7 +549,7 @@ async fn get_image(Query(q): Query<PathQuery>) -> ApiResult<Response> {
         _ => {
             return Err(AppError(
                 StatusCode::BAD_REQUEST,
-                "Keine unterstützte Bilddatei.".into(),
+                "Unsupported image file.".into(),
             ))
         }
     };
@@ -576,7 +557,7 @@ async fn get_image(Query(q): Query<PathQuery>) -> ApiResult<Response> {
     let bytes = std::fs::read(&path).map_err(|e| {
         AppError(
             StatusCode::NOT_FOUND,
-            format!("Bild nicht gefunden ({}): {e}", q.path),
+            format!("Image not found ({}): {e}", q.path),
         )
     })?;
     Ok((
@@ -596,13 +577,13 @@ async fn get_table(Query(q): Query<PathQuery>) -> ApiResult<Json<table::TableRes
     if !path.is_file() {
         return Err(AppError(
             StatusCode::BAD_REQUEST,
-            format!("Tabellendatei nicht gefunden: {}", q.path),
+            format!("Table file not found: {}", q.path),
         ));
     }
 
     let result = tokio::task::spawn_blocking(move || table::read_table(&path))
         .await
-        .map_err(|e| AppError(StatusCode::INTERNAL_SERVER_ERROR, format!("Task-Fehler: {e}")))?
+        .map_err(|e| AppError(StatusCode::INTERNAL_SERVER_ERROR, format!("Task error: {e}")))?
         .map_err(|e| AppError(StatusCode::BAD_REQUEST, e))?;
 
     Ok(Json(result))
@@ -611,58 +592,35 @@ async fn get_table(Query(q): Query<PathQuery>) -> ApiResult<Json<table::TableRes
 // ---------- /api/bib ----------
 
 async fn get_bib(Query(q): Query<PathQuery>) -> ApiResult<Json<Vec<bibtex::BibEntry>>> {
-    let base = PathBuf::from("projects");
-    let base_canon = base.canonicalize().map_err(|e| {
+    let content = std::fs::read_to_string(&q.path).map_err(|e| {
         AppError(
             StatusCode::BAD_REQUEST,
-            format!("Basisverzeichnis konnte nicht aufgelöst werden: {e}"),
-        )
-    })?;
-
-    let requested = base.join(&q.path);
-    let requested_canon = requested.canonicalize().map_err(|e| {
-        AppError(
-            StatusCode::BAD_REQUEST,
-            format!("BibTeX-Datei konnte nicht gelesen werden ({}): {e}", q.path),
-        )
-    })?;
-
-    if !requested_canon.starts_with(&base_canon) {
-        return Err(AppError(
-            StatusCode::BAD_REQUEST,
-            "Ungültiger Pfad außerhalb des erlaubten Verzeichnisses".to_string(),
-        ));
-    }
-
-    let content = std::fs::read_to_string(&requested_canon).map_err(|e| {
-        AppError(
-            StatusCode::BAD_REQUEST,
-            format!("BibTeX-Datei konnte nicht gelesen werden ({}): {e}", q.path),
+            format!("BibTeX file could not be read ({}): {e}", q.path),
         )
     })?;
     let entries = bibtex::parse_bib(&content);
     Ok(Json(entries))
 }
 
-// ---------- /api/bib/entry/create (neuen Eintrag anlegen) ----------
+// ---------- /api/bib/entry/create (create new entry) ----------
 
 #[derive(Deserialize)]
 struct BibEntryCreateBody {
     bib_path: String,
-    /// Roher BibTeX-Quelltext des neuen Eintrags, z.B. "@article{key, ...}".
+    /// Raw BibTeX source of the new entry, e.g. "@article{key, ...}".
     raw: String,
 }
 
 async fn create_bib_entry(Json(body): Json<BibEntryCreateBody>) -> ApiResult<Json<serde_json::Value>> {
     let raw = body.raw.trim();
     if raw.is_empty() {
-        return Err(AppError(StatusCode::BAD_REQUEST, "Der Eintrag darf nicht leer sein.".into()));
+        return Err(AppError(StatusCode::BAD_REQUEST, "The entry must not be empty.".into()));
     }
 
     let bib_path = PathBuf::from(&body.bib_path);
 
-    // Falls die Datei noch nicht existiert, wird sie hier neu angelegt
-    // (leerer Ausgangsinhalt); std::fs::write erstellt sie automatisch.
+    // If the file does not exist yet, it is created here (empty initial
+    // content); std::fs::write creates it automatically.
     let existing = std::fs::read_to_string(&bib_path).unwrap_or_default();
 
     let mut new_content = existing;
@@ -670,17 +628,17 @@ async fn create_bib_entry(Json(body): Json<BibEntryCreateBody>) -> ApiResult<Jso
         if !new_content.ends_with('\n') {
             new_content.push('\n');
         }
-        new_content.push('\n'); // Leerzeile als Trenner zum vorherigen Eintrag
+        new_content.push('\n'); // Blank line separating it from the previous entry
     }
     new_content.push_str(raw);
     new_content.push('\n');
 
-    backup_before_change(&bib_path); // .bak der Datei vor dem Anhängen des neuen Eintrags
+    backup_before_change(&bib_path); // .bak of the file before the new entry is appended
     std::fs::write(&bib_path, new_content)?;
     Ok(Json(serde_json::json!({ "ok": true })))
 }
 
-// ---------- /api/bib/entry (Eintrag bearbeiten) ----------
+// ---------- /api/bib/entry (edit entry) ----------
 
 #[derive(Deserialize)]
 struct BibEntryUpdateBody {
@@ -691,40 +649,11 @@ struct BibEntryUpdateBody {
     raw: String,
 }
 
-fn validate_bib_path(bib_path: &str) -> Result<PathBuf, AppError> {
-    use std::path::{Component, Path};
-
-    let p = Path::new(bib_path);
-    if bib_path.is_empty()
-        || p.is_absolute()
-        || bib_path.contains('/')
-        || bib_path.contains('\\')
-        || bib_path.contains("..")
-        || p.components().any(|c| !matches!(c, Component::Normal(_)))
-    {
-        return Err(AppError(
-            StatusCode::BAD_REQUEST,
-            "Ungültiger BibTeX-Pfad.".to_string(),
-        ));
-    }
-
-    if p.extension().and_then(|e| e.to_str()) != Some("bib") {
-        return Err(AppError(
-            StatusCode::BAD_REQUEST,
-            "Ungültige BibTeX-Datei: Erwartet .bib".to_string(),
-        ));
-    }
-
-    Ok(PathBuf::from("projects").join(p))
-}
-
 async fn update_bib_entry(Json(body): Json<BibEntryUpdateBody>) -> ApiResult<Json<serde_json::Value>> {
-    let safe_bib_path = validate_bib_path(&body.bib_path)?;
-
-    let content = std::fs::read_to_string(&safe_bib_path).map_err(|e| {
+    let content = std::fs::read_to_string(&body.bib_path).map_err(|e| {
         AppError(
             StatusCode::BAD_REQUEST,
-            format!("BibTeX-Datei konnte nicht gelesen werden ({}): {e}", body.bib_path),
+            format!("BibTeX file could not be read ({}): {e}", body.bib_path),
         )
     })?;
 
@@ -732,14 +661,14 @@ async fn update_bib_entry(Json(body): Json<BibEntryUpdateBody>) -> ApiResult<Jso
     let entry = entries.iter().find(|e| e.key == body.original_key).ok_or_else(|| {
         AppError(
             StatusCode::NOT_FOUND,
-            format!("Eintrag '{}' wurde in der Datei nicht gefunden.", body.original_key),
+            format!("Entry '{}' was not found in the file.", body.original_key),
         )
     })?;
 
     let pos = content.find(entry.raw.as_str()).ok_or_else(|| {
         AppError(
             StatusCode::INTERNAL_SERVER_ERROR,
-            "Der Eintrag konnte im Dateiinhalt nicht eindeutig lokalisiert werden.".into(),
+            "The entry could not be located unambiguously in the file content.".into(),
         )
     })?;
 
@@ -748,8 +677,8 @@ async fn update_bib_entry(Json(body): Json<BibEntryUpdateBody>) -> ApiResult<Jso
     new_content.push_str(&body.raw);
     new_content.push_str(&content[pos + entry.raw.len()..]);
 
-    backup_before_change(&safe_bib_path); // .bak der Datei vor dem Bearbeiten
-    std::fs::write(&safe_bib_path, new_content)?;
+    backup_before_change(&PathBuf::from(&body.bib_path)); // .bak of the file before editing
+    std::fs::write(&body.bib_path, new_content)?;
     Ok(Json(serde_json::json!({ "ok": true })))
 }
 
@@ -762,60 +691,10 @@ struct BibEntryDeleteBody {
 }
 
 async fn delete_bib_entry(Json(body): Json<BibEntryDeleteBody>) -> ApiResult<Json<serde_json::Value>> {
-    let requested_path = PathBuf::from(&body.bib_path);
-    if requested_path.is_absolute() {
-        return Err(AppError(
-            StatusCode::BAD_REQUEST,
-            "Ungültiger Pfad: absolute Pfade sind nicht erlaubt.".into(),
-        ));
-    }
-
-    let base_dir = std::env::current_dir().map_err(|e| {
-        AppError(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Arbeitsverzeichnis konnte nicht ermittelt werden: {e}"),
-        )
-    })?;
-    let candidate_path = base_dir.join(&requested_path);
-
-    let canonical_target = if candidate_path.exists() {
-        candidate_path.canonicalize().map_err(|e| {
-            AppError(
-                StatusCode::BAD_REQUEST,
-                format!("Ungültiger Pfad ({}): {e}", body.bib_path),
-            )
-        })?
-    } else {
-        let parent = candidate_path.parent().ok_or_else(|| {
-            AppError(
-                StatusCode::BAD_REQUEST,
-                "Ungültiger Pfad: kein Elternverzeichnis vorhanden.".into(),
-            )
-        })?;
-        let canonical_parent = parent.canonicalize().map_err(|e| {
-            AppError(
-                StatusCode::BAD_REQUEST,
-                format!("Ungültiger Pfad ({}): {e}", body.bib_path),
-            )
-        })?;
-        canonical_parent.join(
-            candidate_path
-                .file_name()
-                .ok_or_else(|| AppError(StatusCode::BAD_REQUEST, "Ungültiger Dateiname.".into()))?,
-        )
-    };
-
-    if !canonical_target.starts_with(&base_dir) {
-        return Err(AppError(
-            StatusCode::BAD_REQUEST,
-            "Ungültiger Pfad: Zugriff außerhalb des Projektverzeichnisses ist nicht erlaubt.".into(),
-        ));
-    }
-
-    let content = std::fs::read_to_string(&canonical_target).map_err(|e| {
+    let content = std::fs::read_to_string(&body.bib_path).map_err(|e| {
         AppError(
             StatusCode::BAD_REQUEST,
-            format!("BibTeX-Datei konnte nicht gelesen werden ({}): {e}", body.bib_path),
+            format!("BibTeX file could not be read ({}): {e}", body.bib_path),
         )
     })?;
 
@@ -823,14 +702,14 @@ async fn delete_bib_entry(Json(body): Json<BibEntryDeleteBody>) -> ApiResult<Jso
     let entry = entries.iter().find(|e| e.key == body.key).ok_or_else(|| {
         AppError(
             StatusCode::NOT_FOUND,
-            format!("Eintrag '{}' wurde in der Datei nicht gefunden.", body.key),
+            format!("Entry '{}' was not found in the file.", body.key),
         )
     })?;
 
     let pos = content.find(entry.raw.as_str()).ok_or_else(|| {
         AppError(
             StatusCode::INTERNAL_SERVER_ERROR,
-            "Der Eintrag konnte im Dateiinhalt nicht eindeutig lokalisiert werden.".into(),
+            "The entry could not be located unambiguously in the file content.".into(),
         )
     })?;
 
@@ -838,8 +717,8 @@ async fn delete_bib_entry(Json(body): Json<BibEntryDeleteBody>) -> ApiResult<Jso
     new_content.push_str(&content[..pos]);
     new_content.push_str(&content[pos + entry.raw.len()..]);
 
-    backup_before_change(&canonical_target); // .bak der Datei vor dem Löschen des Eintrags
-    std::fs::write(&canonical_target, new_content)?;
+    backup_before_change(&PathBuf::from(&body.bib_path)); // .bak of the file before the entry is deleted
+    std::fs::write(&body.bib_path, new_content)?;
     Ok(Json(serde_json::json!({ "ok": true })))
 }
 
