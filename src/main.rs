@@ -174,10 +174,7 @@ fn static_mime_type(path: &str) -> &'static str {
 
 #[tokio::main]
 async fn main() {
-    // Parse CLI arguments
     let args = Args::parse();
-
-    // Ensure the folder that stores saved project files exists.
     std::fs::create_dir_all(projects_dir()).ok();
 
     let app = Router::new()
@@ -210,15 +207,13 @@ async fn main() {
     axum::serve(listener, app).await.unwrap();
 }
 
-// ---------- /api/tree ----------
-
 #[derive(Deserialize)]
 struct DirQuery {
     dir: String,
 }
 
 async fn get_tree(Query(q): Query<DirQuery>) -> ApiResult<Json<tree::TreeNode>> {
-    let base = PathBuf::from(&q.dir);
+    let base = ensure_within_dir(Path::new("."), &PathBuf::from(&q.dir))?;
     if !base.is_dir() {
         return Err(AppError(
             StatusCode::BAD_REQUEST,
@@ -228,8 +223,6 @@ async fn get_tree(Query(q): Query<DirQuery>) -> ApiResult<Json<tree::TreeNode>> 
     let node = tree::build_tree(&base, 0)?;
     Ok(Json(node))
 }
-
-// ---------- /api/browse (folder selection dialog) ----------
 
 #[derive(Deserialize)]
 struct BrowseQuery {
@@ -249,15 +242,9 @@ struct BrowseResponse {
     dirs: Vec<BrowseEntry>,
 }
 
-/// Lists the subdirectories of the given directory (or the user's home
-/// directory / filesystem root if none is given), for the folder-picker
-/// dialog in the frontend. Only directories are returned — files are
-/// irrelevant when choosing a working folder.
 async fn browse_dirs(Query(q): Query<BrowseQuery>) -> ApiResult<Json<BrowseResponse>> {
-    let start = q.dir.unwrap_or_else(|| {
-        std::env::var("HOME").unwrap_or_else(|_| "/".to_string())
-    });
-    let path = PathBuf::from(&start);
+    let start = q.dir.unwrap_or_else(|| std::env::var("HOME").unwrap_or_else(|_| "/".to_string()));
+    let path = ensure_within_dir(Path::new("."), &PathBuf::from(&start))?;
     if !path.is_dir() {
         return Err(AppError(
             StatusCode::BAD_REQUEST,
@@ -292,21 +279,15 @@ async fn browse_dirs(Query(q): Query<BrowseQuery>) -> ApiResult<Json<BrowseRespo
     }))
 }
 
-// ---------- /api/watch (Server-Sent Events: filesystem watcher) ----------
-
 #[derive(Deserialize)]
 struct WatchQuery {
     dir: String,
 }
 
-/// Opens an SSE connection that sends a "change" event whenever something
-/// changes on the filesystem inside `dir` (recursively). The frontend uses
-/// this to update the folder tree automatically, without the user having
-/// to reload manually.
 async fn watch_dir_sse(
     Query(q): Query<WatchQuery>,
 ) -> ApiResult<Sse<impl Stream<Item = Result<Event, Infallible>>>> {
-    let dir = PathBuf::from(&q.dir);
+    let dir = ensure_within_dir(Path::new("."), &PathBuf::from(&q.dir))?;
     if !dir.is_dir() {
         return Err(AppError(
             StatusCode::BAD_REQUEST,
@@ -316,8 +297,6 @@ async fn watch_dir_sse(
 
     let (tx, rx) = tokio::sync::mpsc::channel::<()>(4);
 
-    // notify's watcher is not async; it therefore runs in its own
-    // blocking thread and reports changes back through the channel.
     tokio::task::spawn_blocking(move || {
         watch::watch_directory(&dir, tx);
     });
@@ -328,17 +307,14 @@ async fn watch_dir_sse(
     Ok(Sse::new(stream).keep_alive(KeepAlive::default()))
 }
 
-// ---------- /api/folder/create ----------
-
 #[derive(Deserialize)]
 struct CreateFolderBody {
-    /// Directory in which the new folder is to be created.
     dir: String,
     name: String,
 }
 
 async fn create_folder(Json(body): Json<CreateFolderBody>) -> ApiResult<Json<serde_json::Value>> {
-    let dir = PathBuf::from(&body.dir);
+    let dir = ensure_within_dir(Path::new("."), &PathBuf::from(&body.dir))?;
     if !dir.is_dir() {
         return Err(AppError(
             StatusCode::BAD_REQUEST,
@@ -369,15 +345,13 @@ async fn create_folder(Json(body): Json<CreateFolderBody>) -> ApiResult<Json<ser
     Ok(Json(serde_json::json!({ "ok": true, "path": target.to_string_lossy() })))
 }
 
-// ---------- /api/file ----------
-
 #[derive(Deserialize)]
 struct PathQuery {
     path: String,
 }
 
 async fn get_file(Query(q): Query<PathQuery>) -> ApiResult<String> {
-    let path = PathBuf::from(&q.path);
+    let path = ensure_within_dir(Path::new("."), &PathBuf::from(&q.path))?;
     let content = std::fs::read_to_string(&path).map_err(|e| {
         AppError(
             StatusCode::BAD_REQUEST,
@@ -394,24 +368,20 @@ struct SaveFileBody {
 }
 
 async fn save_file(Json(body): Json<SaveFileBody>) -> ApiResult<Json<serde_json::Value>> {
-    let path = PathBuf::from(&body.path);
-    backup_before_change(&path); // .bak of the previous version before it is overwritten
+    let path = ensure_within_dir(Path::new("."), &PathBuf::from(&body.path))?;
+    backup_before_change(&path);
     std::fs::write(&path, &body.content)?;
     Ok(Json(serde_json::json!({ "ok": true })))
 }
 
-// ---------- /api/file/create ----------
-
 #[derive(Deserialize)]
 struct CreateFileBody {
-    /// Directory the new file should be created in.
     dir: String,
-    /// Desired file name. If it has no extension, ".tex" is appended.
     name: String,
 }
 
 async fn create_file(Json(body): Json<CreateFileBody>) -> ApiResult<Json<serde_json::Value>> {
-    let dir = PathBuf::from(&body.dir);
+    let dir = ensure_within_dir(Path::new("."), &PathBuf::from(&body.dir))?;
     if !dir.is_dir() {
         return Err(AppError(
             StatusCode::BAD_REQUEST,
@@ -444,8 +414,6 @@ async fn create_file(Json(body): Json<CreateFileBody>) -> ApiResult<Json<serde_j
         ));
     }
 
-    // New .tex files start with a minimal, compilable document skeleton so
-    // the user has something sensible to work with right away.
     let initial_content = if name.to_lowercase().ends_with(".tex") {
         "\\documentclass{article}\n\\usepackage[utf8]{inputenc}\n\n\\begin{document}\n\n\\end{document}\n"
     } else {
@@ -456,8 +424,6 @@ async fn create_file(Json(body): Json<CreateFileBody>) -> ApiResult<Json<serde_j
     Ok(Json(serde_json::json!({ "ok": true, "path": target.to_string_lossy() })))
 }
 
-// ---------- /api/file/rename ----------
-
 #[derive(Deserialize)]
 struct RenameFileBody {
     path: String,
@@ -465,7 +431,7 @@ struct RenameFileBody {
 }
 
 async fn rename_file(Json(body): Json<RenameFileBody>) -> ApiResult<Json<serde_json::Value>> {
-    let old_path = PathBuf::from(&body.path);
+    let old_path = ensure_within_dir(Path::new("."), &PathBuf::from(&body.path))?;
     if !old_path.exists() {
         return Err(AppError(
             StatusCode::NOT_FOUND,
@@ -501,15 +467,13 @@ async fn rename_file(Json(body): Json<RenameFileBody>) -> ApiResult<Json<serde_j
     Ok(Json(serde_json::json!({ "ok": true, "path": new_path.to_string_lossy() })))
 }
 
-// ---------- /api/file/delete ----------
-
 #[derive(Deserialize)]
 struct DeleteFileBody {
     path: String,
 }
 
 async fn delete_file(Json(body): Json<DeleteFileBody>) -> ApiResult<Json<serde_json::Value>> {
-    let path = PathBuf::from(&body.path);
+    let path = ensure_within_dir(Path::new("."), &PathBuf::from(&body.path))?;
     if !path.exists() {
         return Err(AppError(
             StatusCode::NOT_FOUND,
@@ -518,17 +482,13 @@ async fn delete_file(Json(body): Json<DeleteFileBody>) -> ApiResult<Json<serde_j
     }
 
     if path.is_dir() {
-        // A recursive .bak of a whole folder cannot be represented sensibly
-        // (there is no single file name) — so no backup is made here.
         std::fs::remove_dir_all(&path)?;
     } else {
-        backup_before_change(&path); // Content is kept as .bak in case it was deleted by accident
+        backup_before_change(&path);
         std::fs::remove_file(&path)?;
     }
     Ok(Json(serde_json::json!({ "ok": true })))
 }
-
-// ---------- /api/compile ----------
 
 #[derive(Deserialize)]
 struct CompileBody {
@@ -545,7 +505,7 @@ struct CompileResponse {
 }
 
 async fn compile_tex(Json(body): Json<CompileBody>) -> ApiResult<Json<CompileResponse>> {
-    let tex_path = PathBuf::from(&body.path);
+    let tex_path = ensure_within_dir(Path::new("."), &PathBuf::from(&body.path))?;
     if !tex_path.is_file() {
         return Err(AppError(
             StatusCode::BAD_REQUEST,
@@ -566,13 +526,9 @@ async fn compile_tex(Json(body): Json<CompileBody>) -> ApiResult<Json<CompileRes
     }))
 }
 
-// ---------- /api/latexdiff ----------
-
 #[derive(Deserialize)]
 struct LatexDiffBody {
-    /// Path of the (comparison) file selected in the working folder.
     old_path: String,
-    /// Path of the (new) file currently open in the editor.
     new_path: String,
 }
 
@@ -584,8 +540,8 @@ struct LatexDiffResponse {
 }
 
 async fn run_latexdiff_handler(Json(body): Json<LatexDiffBody>) -> ApiResult<Json<LatexDiffResponse>> {
-    let old_path = PathBuf::from(&body.old_path);
-    let new_path = PathBuf::from(&body.new_path);
+    let old_path = ensure_within_dir(Path::new("."), &PathBuf::from(&body.old_path))?;
+    let new_path = ensure_within_dir(Path::new("."), &PathBuf::from(&body.new_path))?;
 
     if !old_path.is_file() {
         return Err(AppError(
@@ -617,10 +573,8 @@ async fn run_latexdiff_handler(Json(body): Json<LatexDiffBody>) -> ApiResult<Jso
     }))
 }
 
-// ---------- /api/pdf ----------
-
 async fn get_pdf(Query(q): Query<PathQuery>) -> ApiResult<Response> {
-    let path = PathBuf::from(&q.path);
+    let path = ensure_within_dir(Path::new("."), &PathBuf::from(&q.path))?;
     let bytes = std::fs::read(&path).map_err(|e| {
         AppError(
             StatusCode::NOT_FOUND,
@@ -628,10 +582,6 @@ async fn get_pdf(Query(q): Query<PathQuery>) -> ApiResult<Response> {
         )
     })?;
 
-    // "inline" explicitly tells the browser to display the PDF directly
-    // instead of downloading it. Without this header the decision is left
-    // to the browser's heuristics, which can be inconsistent depending on
-    // settings, extensions or browser version.
     let file_name = path
         .file_name()
         .and_then(|n| n.to_str())
@@ -648,10 +598,8 @@ async fn get_pdf(Query(q): Query<PathQuery>) -> ApiResult<Response> {
         .into_response())
 }
 
-// ---------- /api/image ----------
-
 async fn get_image(Query(q): Query<PathQuery>) -> ApiResult<Response> {
-    let path = PathBuf::from(&q.path);
+    let path = ensure_within_dir(Path::new("."), &PathBuf::from(&q.path))?;
     let content_type = match path
         .extension()
         .and_then(|e| e.to_str())
@@ -690,10 +638,8 @@ async fn get_image(Query(q): Query<PathQuery>) -> ApiResult<Response> {
         .into_response())
 }
 
-// ---------- /api/table ----------
-
 async fn get_table(Query(q): Query<PathQuery>) -> ApiResult<Json<table::TableResult>> {
-    let path = PathBuf::from(&q.path);
+    let path = ensure_within_dir(Path::new("."), &PathBuf::from(&q.path))?;
     if !path.is_file() {
         return Err(AppError(
             StatusCode::BAD_REQUEST,
@@ -709,25 +655,21 @@ async fn get_table(Query(q): Query<PathQuery>) -> ApiResult<Json<table::TableRes
     Ok(Json(result))
 }
 
-// ---------- /api/bib ----------
-
 async fn get_bib(Query(q): Query<PathQuery>) -> ApiResult<Json<Vec<bibtex::BibEntry>>> {
-    let content = std::fs::read_to_string(&q.path).map_err(|e| {
+    let path = ensure_within_dir(Path::new("."), &PathBuf::from(&q.path))?;
+    let content = std::fs::read_to_string(&path).map_err(|e| {
         AppError(
             StatusCode::BAD_REQUEST,
-            format!("BibTeX file could not be read ({}): {e}", q.path),
+            format!("BibTeX file could not be read ({}): {e}", path.display()),
         )
     })?;
     let entries = bibtex::parse_bib(&content);
     Ok(Json(entries))
 }
 
-// ---------- /api/bib/entry/create (create new entry) ----------
-
 #[derive(Deserialize)]
 struct BibEntryCreateBody {
     bib_path: String,
-    /// Raw BibTeX source of the new entry, e.g. "@article{key, ...}".
     raw: String,
 }
 
@@ -737,10 +679,7 @@ async fn create_bib_entry(Json(body): Json<BibEntryCreateBody>) -> ApiResult<Jso
         return Err(AppError(StatusCode::BAD_REQUEST, "The entry must not be empty.".into()));
     }
 
-    let bib_path = PathBuf::from(&body.bib_path);
-
-    // If the file does not exist yet, it is created here (empty initial
-    // content); std::fs::write creates it automatically.
+    let bib_path = ensure_within_dir(Path::new("."), &PathBuf::from(&body.bib_path))?;
     let existing = std::fs::read_to_string(&bib_path).unwrap_or_default();
 
     let mut new_content = existing;
@@ -748,32 +687,29 @@ async fn create_bib_entry(Json(body): Json<BibEntryCreateBody>) -> ApiResult<Jso
         if !new_content.ends_with('\n') {
             new_content.push('\n');
         }
-        new_content.push('\n'); // Blank line separating it from the previous entry
+        new_content.push('\n');
     }
     new_content.push_str(raw);
     new_content.push('\n');
 
-    backup_before_change(&bib_path); // .bak of the file before the new entry is appended
+    backup_before_change(&bib_path);
     std::fs::write(&bib_path, new_content)?;
     Ok(Json(serde_json::json!({ "ok": true })))
 }
 
-// ---------- /api/bib/entry (edit entry) ----------
-
 #[derive(Deserialize)]
 struct BibEntryUpdateBody {
     bib_path: String,
-    /// Key of the entry as it currently exists in the file (used to find it).
     original_key: String,
-    /// New raw BibTeX source for this entry (e.g. "@book{key, title = {...}, ...}").
     raw: String,
 }
 
 async fn update_bib_entry(Json(body): Json<BibEntryUpdateBody>) -> ApiResult<Json<serde_json::Value>> {
-    let content = std::fs::read_to_string(&body.bib_path).map_err(|e| {
+    let bib_path = ensure_within_dir(Path::new("."), &PathBuf::from(&body.bib_path))?;
+    let content = std::fs::read_to_string(&bib_path).map_err(|e| {
         AppError(
             StatusCode::BAD_REQUEST,
-            format!("BibTeX file could not be read ({}): {e}", body.bib_path),
+            format!("BibTeX file could not be read ({}): {e}", bib_path.display()),
         )
     })?;
 
@@ -785,7 +721,6 @@ async fn update_bib_entry(Json(body): Json<BibEntryUpdateBody>) -> ApiResult<Jso
         )
     })?;
 
-    // Use exact position tracking instead of find() to avoid ambiguity
     let start = entry.start;
     let end = entry.end;
 
@@ -794,12 +729,10 @@ async fn update_bib_entry(Json(body): Json<BibEntryUpdateBody>) -> ApiResult<Jso
     new_content.push_str(&body.raw);
     new_content.push_str(&content[end..]);
 
-    backup_before_change(&PathBuf::from(&body.bib_path)); // .bak of the file before editing
-    std::fs::write(&body.bib_path, new_content)?;
+    backup_before_change(&bib_path);
+    std::fs::write(&bib_path, new_content)?;
     Ok(Json(serde_json::json!({ "ok": true })))
 }
-
-// ---------- /api/bib/entry/delete ----------
 
 #[derive(Deserialize)]
 struct BibEntryDeleteBody {
@@ -808,10 +741,11 @@ struct BibEntryDeleteBody {
 }
 
 async fn delete_bib_entry(Json(body): Json<BibEntryDeleteBody>) -> ApiResult<Json<serde_json::Value>> {
-    let content = std::fs::read_to_string(&body.bib_path).map_err(|e| {
+    let bib_path = ensure_within_dir(Path::new("."), &PathBuf::from(&body.bib_path))?;
+    let content = std::fs::read_to_string(&bib_path).map_err(|e| {
         AppError(
             StatusCode::BAD_REQUEST,
-            format!("BibTeX file could not be read ({}): {e}", body.bib_path),
+            format!("BibTeX file could not be read ({}): {e}", bib_path.display()),
         )
     })?;
 
@@ -823,7 +757,6 @@ async fn delete_bib_entry(Json(body): Json<BibEntryDeleteBody>) -> ApiResult<Jso
         )
     })?;
 
-    // Use exact position tracking instead of find() to avoid ambiguity
     let start = entry.start;
     let end = entry.end;
 
@@ -831,12 +764,11 @@ async fn delete_bib_entry(Json(body): Json<BibEntryDeleteBody>) -> ApiResult<Jso
     new_content.push_str(&content[..start]);
     new_content.push_str(&content[end..]);
 
-    backup_before_change(&PathBuf::from(&body.bib_path)); // .bak of the file before the entry is deleted
-    std::fs::write(&body.bib_path, new_content)?;
+    backup_before_change(&bib_path);
+    std::fs::write(&bib_path, new_content)?;
     Ok(Json(serde_json::json!({ "ok": true })))
 }
 
-// Small helper kept here so other modules can share it without a circular import.
 pub(crate) fn is_hidden(path: &Path) -> bool {
     path.file_name()
         .and_then(|n| n.to_str())
