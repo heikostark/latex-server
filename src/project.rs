@@ -1,9 +1,9 @@
-use crate::{AppError, ApiResult};
+use crate::{AppError, ApiResult, ensure_within_dir};
 use axum::extract::Query;
 use axum::http::StatusCode;
 use axum::Json;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct ProjectConfig {
@@ -28,6 +28,16 @@ pub async fn save_project(Json(config): Json<ProjectConfig>) -> ApiResult<Json<s
     if config.name.trim().is_empty() {
         return Err(AppError(StatusCode::BAD_REQUEST, "Project name must not be empty.".into()));
     }
+    
+    // Validate that working_dir exists and is accessible
+    let working_dir = PathBuf::from(&config.working_dir);
+    if !working_dir.is_dir() {
+        return Err(AppError(
+            StatusCode::BAD_REQUEST,
+            format!("Working directory does not exist: {}", config.working_dir),
+        ));
+    }
+    
     std::fs::create_dir_all(crate::projects_dir())?;
     let path = project_file_path(&config.name);
     let json = serde_json::to_string_pretty(&config)
@@ -47,6 +57,11 @@ pub async fn load_project(Query(q): Query<LoadQuery>) -> ApiResult<Json<ProjectC
         .map_err(|e| AppError(StatusCode::NOT_FOUND, format!("Project '{}' not found: {e}", q.name)))?;
     let config: ProjectConfig = serde_json::from_str(&content)
         .map_err(|e| AppError(StatusCode::INTERNAL_SERVER_ERROR, format!("Project file is corrupt: {e}")))?;
+    
+    // Validate the working_dir from the loaded config to prevent path traversal attacks
+    let working_dir = PathBuf::from(&config.working_dir);
+    ensure_within_dir(Path::new("."), &working_dir)?;
+    
     Ok(Json(config))
 }
 
