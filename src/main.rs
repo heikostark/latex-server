@@ -44,7 +44,7 @@ struct Args {
     port: u16,
 
     /// The host address the server should bind to (e.g. 127.0.0.1 or 0.0.0.0)
-    #[arg(short, long, default_value = "0.0.0.0")]
+    #[arg(short, long, default_value = "127.0.0.1")]
     host: String,
 }
 
@@ -64,6 +64,36 @@ impl From<std::io::Error> for AppError {
 }
 
 pub(crate) type ApiResult<T> = Result<T, AppError>;
+
+/// Validates that a candidate path is within the given root directory.
+/// Both paths are canonicalized to prevent symlink/.. traversal attacks.
+fn ensure_within_dir(root: &Path, candidate: &Path) -> ApiResult<PathBuf> {
+    let root_canonical = std::fs::canonicalize(root).map_err(|e| {
+        AppError(
+            StatusCode::BAD_REQUEST,
+            format!("Invalid working directory: {e}"),
+        )
+    })?;
+
+    let candidate_canonical = std::fs::canonicalize(candidate).map_err(|e| {
+        AppError(
+            StatusCode::BAD_REQUEST,
+            format!("Invalid path: {e}"),
+        )
+    })?;
+
+    if !candidate_canonical.starts_with(&root_canonical) {
+        return Err(AppError(
+            StatusCode::FORBIDDEN,
+            format!(
+                "Path is outside the working directory: {}",
+                candidate_canonical.display()
+            ),
+        ));
+    }
+
+    Ok(candidate_canonical)
+}
 
 /// Copies the current content of `path` to `path.bak` (overwriting any
 /// previous backup) before it gets modified or removed. A no-op if the
@@ -347,10 +377,11 @@ struct PathQuery {
 }
 
 async fn get_file(Query(q): Query<PathQuery>) -> ApiResult<String> {
-    let content = std::fs::read_to_string(&q.path).map_err(|e| {
+    let path = PathBuf::from(&q.path);
+    let content = std::fs::read_to_string(&path).map_err(|e| {
         AppError(
             StatusCode::BAD_REQUEST,
-            format!("File could not be read ({}): {e}", q.path),
+            format!("File could not be read ({}): {e}", path.display()),
         )
     })?;
     Ok(content)
@@ -455,7 +486,8 @@ async fn rename_file(Json(body): Json<RenameFileBody>) -> ApiResult<Json<serde_j
 
     let parent = old_path
         .parent()
-        .ok_or_else(|| AppError(StatusCode::BAD_REQUEST, "No parent folder found.".into()))?;
+        .ok_or_else(|| AppError(StatusCode::BAD_REQUEST, "No parent folder found.".into()))?
+        .to_path_buf();
     let new_path = parent.join(new_name);
 
     if new_path.exists() {
@@ -523,7 +555,7 @@ async fn compile_tex(Json(body): Json<CompileBody>) -> ApiResult<Json<CompileRes
 
     let result = tokio::task::spawn_blocking(move || compile::run_compile(&tex_path))
         .await
-        .map_err(|e| AppError(StatusCode::INTERNAL_SERVER_ERROR, format!("Task error: {e}")))??;
+        .map_err(|e| AppError(StatusCode::INTERNAL_SERVER_ERROR, format!("Task error: {e}"}))??;
 
     Ok(Json(CompileResponse {
         success: result.success,
@@ -592,7 +624,7 @@ async fn get_pdf(Query(q): Query<PathQuery>) -> ApiResult<Response> {
     let bytes = std::fs::read(&path).map_err(|e| {
         AppError(
             StatusCode::NOT_FOUND,
-            format!("PDF not found ({}): {e}", q.path),
+            format!("PDF not found ({}): {e}", path.display()),
         )
     })?;
 
@@ -645,7 +677,7 @@ async fn get_image(Query(q): Query<PathQuery>) -> ApiResult<Response> {
     let bytes = std::fs::read(&path).map_err(|e| {
         AppError(
             StatusCode::NOT_FOUND,
-            format!("Image not found ({}): {e}", q.path),
+            format!("Image not found ({}): {e}", path.display()),
         )
     })?;
     Ok((
@@ -665,14 +697,14 @@ async fn get_table(Query(q): Query<PathQuery>) -> ApiResult<Json<table::TableRes
     if !path.is_file() {
         return Err(AppError(
             StatusCode::BAD_REQUEST,
-            format!("Table file not found: {}", q.path),
+            format!("Table file not found: {}", path.display()),
         ));
     }
 
     let result = tokio::task::spawn_blocking(move || table::read_table(&path))
         .await
-        .map_err(|e| AppError(StatusCode::INTERNAL_SERVER_ERROR, format!("Task error: {e}")))?
-        .map_err(|e| AppError(StatusCode::BAD_REQUEST, e))?;
+        .map_err(|e| AppError(StatusCode::INTERNAL_SERVER_ERROR, format!("Task error: {e}"})))
+        .map_err(|e| AppError(StatusCode::BAD_REQUEST, e.0.to_string()))?;
 
     Ok(Json(result))
 }
@@ -753,17 +785,14 @@ async fn update_bib_entry(Json(body): Json<BibEntryUpdateBody>) -> ApiResult<Jso
         )
     })?;
 
-    let pos = content.find(entry.raw.as_str()).ok_or_else(|| {
-        AppError(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "The entry could not be located unambiguously in the file content.".into(),
-        )
-    })?;
+    // Use exact position tracking instead of find() to avoid ambiguity
+    let start = entry.start;
+    let end = entry.end;
 
-    let mut new_content = String::with_capacity(content.len() - entry.raw.len() + body.raw.len());
-    new_content.push_str(&content[..pos]);
+    let mut new_content = String::with_capacity(content.len() - (end - start) + body.raw.len());
+    new_content.push_str(&content[..start]);
     new_content.push_str(&body.raw);
-    new_content.push_str(&content[pos + entry.raw.len()..]);
+    new_content.push_str(&content[end..]);
 
     backup_before_change(&PathBuf::from(&body.bib_path)); // .bak of the file before editing
     std::fs::write(&body.bib_path, new_content)?;
@@ -794,16 +823,13 @@ async fn delete_bib_entry(Json(body): Json<BibEntryDeleteBody>) -> ApiResult<Jso
         )
     })?;
 
-    let pos = content.find(entry.raw.as_str()).ok_or_else(|| {
-        AppError(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "The entry could not be located unambiguously in the file content.".into(),
-        )
-    })?;
+    // Use exact position tracking instead of find() to avoid ambiguity
+    let start = entry.start;
+    let end = entry.end;
 
     let mut new_content = String::with_capacity(content.len());
-    new_content.push_str(&content[..pos]);
-    new_content.push_str(&content[pos + entry.raw.len()..]);
+    new_content.push_str(&content[..start]);
+    new_content.push_str(&content[end..]);
 
     backup_before_change(&PathBuf::from(&body.bib_path)); // .bak of the file before the entry is deleted
     std::fs::write(&body.bib_path, new_content)?;

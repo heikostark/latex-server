@@ -10,6 +10,16 @@ pub struct BibEntry {
     /// closing "}" inclusive). Used to locate and replace/remove the
     /// entry in the file when editing or deleting it.
     pub raw: String,
+    /// Start position (byte offset) of this entry in the original file.
+    /// Used for precise position-based replacement to avoid ambiguity
+    /// when entries have identical text.
+    #[serde(skip)]
+    pub start: usize,
+    /// End position (byte offset) of this entry in the original file.
+    /// Used for precise position-based replacement to avoid ambiguity
+    /// when entries have identical text.
+    #[serde(skip)]
+    pub end: usize,
 }
 
 /// Parses a .bib file's content into a list of entries.
@@ -57,6 +67,8 @@ pub fn parse_bib(content: &str) -> Vec<BibEntry> {
                             key,
                             fields,
                             raw,
+                            start: entry_start,
+                            end,
                         });
                     }
                 }
