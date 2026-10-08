@@ -636,7 +636,7 @@ async fn get_pdf(Query(q): Query<PathQuery>) -> ApiResult<Response> {
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("dokument.pdf");
-    let disposition = format!("inline; filename=\"{}\"", file_name.replace('\"', "'"));
+    let disposition = format!("inline; filename=\"{}\"", file_name.replace('"', "'"));
 
     Ok((
         [
@@ -703,8 +703,7 @@ async fn get_table(Query(q): Query<PathQuery>) -> ApiResult<Json<table::TableRes
 
     let result = tokio::task::spawn_blocking(move || table::read_table(&path))
         .await
-        .map_err(|e| AppError(StatusCode::INTERNAL_SERVER_ERROR, format!("Task error: {e}")))
-        .map_err(|e| AppError(StatusCode::BAD_REQUEST, e.0.to_string()))?;
+        .map_err(|e| AppError(StatusCode::INTERNAL_SERVER_ERROR, format!("Task error: {e}")))?;
 
     Ok(Json(result))
 }
