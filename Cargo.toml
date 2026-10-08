@@ -1,7 +1,9 @@
 [package]
 name = "latex-project-server"
-version = "0.1.0"
+license = "MIT"
+version = "0.21.0"
 edition = "2021"
+description = "A small Rust (Axum) web server that provides a single-page web interface for editing and compiling LaTeX projects."
 
 [dependencies]
 axum = { version = "0.7" }
