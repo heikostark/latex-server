@@ -53,6 +53,9 @@ const el = {
   tableModalBody: document.getElementById("tableModalBody"),
   tableModalClose: document.getElementById("tableModalClose"),
   btnNewBibEntry: document.getElementById("btnNewBibEntry"),
+  btnBold: document.getElementById("btnBold"),
+  btnItalic: document.getElementById("btnItalic"),
+  btnHighlight: document.getElementById("btnHighlight"),
   searchInput: document.getElementById("searchInput"),
   replaceInput: document.getElementById("replaceInput"),
   btnFindPrev: document.getElementById("btnFindPrev"),
@@ -305,6 +308,99 @@ el.editorContainer.addEventListener("dragleave", () => {
 el.editorContainer.addEventListener("drop", () => {
   el.editorContainer.classList.remove("drag-over");
   state.dirty = true;
+});
+
+// ---------- Text Formatting (Editor Footer) ----------
+
+function makeBold() {
+  if (!cm) {
+    setStatus("Please open a file in the editor first.", true);
+    return;
+  }
+  const selection = cm.getSelection();
+  if (selection) {
+    // If text is selected, wrap it
+    cm.replaceSelection(`\\textbf{${selection}}`);
+  } else {
+    // If no text is selected, insert empty brackets and place the cursor inside
+    cm.replaceSelection(`\\textbf{}`);
+    const cursor = cm.getCursor();
+    cm.setCursor({ line: cursor.line, ch: cursor.ch - 1 });
+  }
+  cm.focus();
+  state.dirty = true;
+}
+
+el.btnBold.addEventListener("click", () => makeBold());
+
+// Keyboard shortcut Ctrl+B / Cmd+B for bold formatting
+document.addEventListener("keydown", (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "b") {
+    e.preventDefault();
+    makeBold();
+  }
+});
+
+// ---------- Text Formatting (Editor Footer) ----------
+
+function makeItalic() {
+  if (!cm) {
+    setStatus("Please open a file in the editor first.", true);
+    return;
+  }
+  const selection = cm.getSelection();
+  if (selection) {
+    // If text is selected, wrap it
+    cm.replaceSelection(`\\textit{${selection}}`);
+  } else {
+    // If no text is selected, insert empty brackets and place the cursor inside
+    cm.replaceSelection(`\\textit{}`);
+    const cursor = cm.getCursor();
+    cm.setCursor({ line: cursor.line, ch: cursor.ch - 1 });
+  }
+  cm.focus();
+  state.dirty = true;
+}
+
+el.btnItalic.addEventListener("click", () => makeItalic());
+
+// Keyboard shortcut Ctrl+I / Cmd+I for italic formatting
+document.addEventListener("keydown", (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "i") {
+    e.preventDefault();
+    makeItalic();
+  }
+});
+
+// ---------- Text Formatting (Editor Footer) ----------
+
+function makeHighlight() {
+  if (!cm) {
+    setStatus("Please open a file in the editor first.", true);
+    return;
+  }
+  const selection = cm.getSelection();
+  if (selection) {
+    // If text is selected, wrap it
+    cm.replaceSelection(`\\hl{${selection}}`);
+  } else {
+    // If no text is selected, insert empty brackets and place the cursor inside
+    cm.replaceSelection(`\\hl{}`);
+    const cursor = cm.getCursor();
+    cm.setCursor({ line: cursor.line, ch: cursor.ch - 1 });
+  }
+  cm.focus();
+  state.dirty = true;
+}
+
+el.btnHighlight.addEventListener("click", () => makeHighlight());
+
+// Keyboard shortcut Ctrl+H / Cmd+H for highlight formatting
+document.addEventListener("keydown", (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "h") {
+    e.preventDefault();
+    makeHighlight();
+  }
 });
 
 // ---------- Search & replace (editor footer) ----------
@@ -1454,19 +1550,35 @@ function renderBibEntries(entries) {
     el.bibList.innerHTML = `<p class="hint">No entries found.</p>`;
     return;
   }
-  entries.forEach((entry) => {
-    const div = document.createElement("div");
-    div.className = "bib-entry";
-    div.title = "Double-click: open link/Google Scholar · Drag into editor: insert \\cite{} · Right-click: more options";
-    div.draggable = true;
-    const title = entry.fields.title || "(no title)";
+  
+  const sortedentries = [...entries].sort((a, b) => {
+    const keyA = (a.key || "").toLowerCase();
+    const keyB = (b.key || "").toLowerCase();
+    return keyA.localeCompare(keyB);
+  });
+  
+  sortedentries.forEach((entry) => {
+    let rawtitle = entry.fields.title || "(no title)";
+    let title = rawtitle;
+    if (rawtitle.length > 40) {
+      title = rawtitle.substring(0, 40) + "...";
+    }     
     const author = entry.fields.author || "";
     const year = entry.fields.year || "";
+    
+    const div = document.createElement("div");    
+    div.className = "bib-entry";
+    div.title = `Double-click: open link/Google Scholar
+Drag into editor: insert \\cite{}
+Right-click: more options
+
+${escapeHtml(author)}${author && year ? " · " : ""}${escapeHtml(year)}
+${escapeHtml(rawtitle)}`;
+    div.draggable = true;
+    
     div.innerHTML = `
       <span class="bib-key">${escapeHtml(entry.key)} <em>(${escapeHtml(entry.entry_type)})</em></span>
-      <span class="bib-title">${escapeHtml(title)}</span>
-      <span class="bib-meta">${escapeHtml(author)}${author && year ? " · " : ""}${escapeHtml(year)}</span>
-    `;
+      <span class="bib-title">${escapeHtml(title)}</span>`;
     div.addEventListener("dblclick", () => openBibSourceLink(entry));
     div.addEventListener("dragstart", (e) => {
       e.dataTransfer.setData("text/plain", `\\cite{${entry.key}}`);

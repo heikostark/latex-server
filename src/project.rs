@@ -5,8 +5,6 @@ use axum::Json;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-const PROJECTS_DIR: &str = "projects";
-
 #[derive(Serialize, Deserialize, Clone)]
 pub struct ProjectConfig {
     pub name: String,
@@ -23,17 +21,17 @@ fn project_file_path(name: &str) -> PathBuf {
         .chars()
         .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' || c == ' ' { c } else { '_' })
         .collect();
-    PathBuf::from(PROJECTS_DIR).join(format!("{}.json", safe.trim()))
+    crate::projects_dir().join(format!("{}.json", safe.trim()))
 }
 
 pub async fn save_project(Json(config): Json<ProjectConfig>) -> ApiResult<Json<serde_json::Value>> {
     if config.name.trim().is_empty() {
         return Err(AppError(StatusCode::BAD_REQUEST, "Project name must not be empty.".into()));
     }
-    std::fs::create_dir_all(PROJECTS_DIR)?;
+    std::fs::create_dir_all(crate::projects_dir())?;
     let path = project_file_path(&config.name);
     let json = serde_json::to_string_pretty(&config)
-        .map_err(|e| AppError(StatusCode::INTERNAL_SERVER_ERROR, format!("Serialisierungsfehler: {e}")))?;
+        .map_err(|e| AppError(StatusCode::INTERNAL_SERVER_ERROR, format!("Serialization error: {e}")))?;
     std::fs::write(path, json)?;
     Ok(Json(serde_json::json!({ "ok": true })))
 }
@@ -53,9 +51,10 @@ pub async fn load_project(Query(q): Query<LoadQuery>) -> ApiResult<Json<ProjectC
 }
 
 pub async fn list_projects() -> ApiResult<Json<Vec<String>>> {
-    std::fs::create_dir_all(PROJECTS_DIR)?;
+    let dir = crate::projects_dir();
+    std::fs::create_dir_all(&dir)?;
     let mut names = Vec::new();
-    for entry in std::fs::read_dir(PROJECTS_DIR)? {
+    for entry in std::fs::read_dir(&dir)? {
         let entry = entry?;
         let path = entry.path();
         if path.extension().and_then(|e| e.to_str()) == Some("json") {

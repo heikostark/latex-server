@@ -34,6 +34,15 @@ cargo run --release
 The server then runs at <http://localhost:3000>. Open that address in
 your browser.
 
+The compiled binary (`target/release/latex-project-server`) can also be
+started directly, from any directory. The whole frontend (`static/`,
+including the vendored CodeMirror files) is embedded into the binary at
+build time, so it does not depend on the current working directory.
+Saved projects (`projects/`) are stored in a `projects/` folder next to
+the binary. Note: after changing anything under `static/`, rebuild
+(`cargo build --release`) for the change to take effect, since the files
+are compiled in.
+
 ## Usage
 
 1. **Open a working folder**: Either type the path directly into the text
@@ -233,7 +242,7 @@ static/
                  loaded via CDN, so the editor loads reliably regardless
                  of external network reachability (firewalls, ad
                  blockers, offline use).
-projects/      – Stored project configurations (created automatically)
+projects/      – Stored project configurations (created automatically next to the binary at runtime)
 ```
 
 ## Known limitations
@@ -289,3 +298,15 @@ makes them display identically on every system regardless of installed
 fonts. As a side effect, the "New folder"/"New .tex file" buttons in the
 header of area 1 were also removed, since the same functionality was
 already available via the right-click context menu (see point 10 above).
+
+## Note on a fixed bug (binary only worked via `cargo run`)
+
+Earlier versions served the frontend with `ServeDir::new("static")` and
+stored projects in `projects/`. Both are relative paths, resolved against
+the process's *current working directory* — not against the binary's
+location and not against any environment variable. `cargo run` is
+normally invoked from the project root, so it worked; starting the
+compiled binary from another directory (e.g. from inside
+`target/release/`) made the server start normally but answer every page
+request with HTTP 404. The frontend is now embedded into the binary
+(`include_dir`) and `projects/` is resolved relative to the executable.

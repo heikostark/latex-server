@@ -8,7 +8,7 @@ mod watch;
 
 use axum::{
     extract::Query,
-    http::{header, StatusCode},
+    http::{header, StatusCode, Uri},
     response::{
         sse::{Event, KeepAlive, Sse},
         IntoResponse, Response,
@@ -16,12 +16,37 @@ use axum::{
     routing::get,
     Json, Router,
 };
+use clap::Parser;
+use include_dir::{include_dir, Dir};
 use serde::{Deserialize, Serialize};
 use std::convert::Infallible;
 use std::path::{Path, PathBuf};
 use tokio_stream::{Stream, StreamExt};
 use tower_http::cors::CorsLayer;
-use tower_http::services::ServeDir;
+
+/// The frontend (`static/`, including the vendored CodeMirror files) is
+/// embedded into the compiled binary at build time. This way the app no
+/// longer depends on the process's current working directory to find its
+/// own assets — running the binary as `cargo run`, as `./latex-project-server`
+/// from the project root, or as `./target/release/latex-project-server`
+/// from inside `target/release/` (a natural thing to try after building)
+/// all serve the exact same files. Without this, only the first of those
+/// worked, since `ServeDir::new("static")` resolved "static" relative to
+/// whatever directory the process happened to be started from.
+static STATIC_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/static");
+
+/// CLI arguments for configuring the server (port, host, etc.)
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    /// The port number the server should listen on
+    #[arg(short, long, default_value_t = 3000)]
+    port: u16,
+
+    /// The host address the server should bind to (e.g. 127.0.0.1 or 0.0.0.0)
+    #[arg(short, long, default_value = "0.0.0.0")]
+    host: String,
+}
 
 /// Generic error type for API handlers.
 pub(crate) struct AppError(pub StatusCode, pub String);
@@ -57,10 +82,73 @@ fn backup_before_change(path: &Path) {
     }
 }
 
+/// Directory saved project configurations are written to and read from
+/// (see `project.rs`). Resolved relative to the running executable's own
+/// location rather than the current working directory, so it ends up in a
+/// predictable, consistent place (next to the binary) no matter which
+/// directory the server happens to be started from.
+pub(crate) fn projects_dir() -> PathBuf {
+    std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(|p| p.to_path_buf()))
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("projects")
+}
+
+/// Serves the embedded frontend (see `STATIC_DIR` above). Mirrors the
+/// bits of `tower_http::services::ServeDir` behavior this app relies on:
+/// serves `index.html` for the root path and for any path with no file
+/// extension (so e.g. a trailing slash still resolves), otherwise serves
+/// the exact requested file, with a content type guessed from its
+/// extension.
+async fn serve_embedded(uri: Uri) -> Response {
+    let path = uri.path().trim_start_matches('/');
+    let path = if path.is_empty() { "index.html" } else { path };
+
+    if let Some(file) = STATIC_DIR.get_file(path) {
+        let mime = static_mime_type(path);
+        return ([(header::CONTENT_TYPE, mime)], file.contents()).into_response();
+    }
+
+    // Fallback to index.html for extension-less paths (e.g. a trailing
+    // slash), matching ServeDir's previous behavior for this single-page app.
+    if !path.contains('.') {
+        if let Some(index) = STATIC_DIR.get_file("index.html") {
+            return ([(header::CONTENT_TYPE, "text/html")], index.contents()).into_response();
+        }
+    }
+
+    (StatusCode::NOT_FOUND, "Not found").into_response()
+}
+
+/// Minimal extension-to-MIME-type mapping for the file types that exist
+/// under `static/` (the frontend, including the vendored CodeMirror
+/// files). Deliberately not a general-purpose MIME database.
+fn static_mime_type(path: &str) -> &'static str {
+    match Path::new(path).extension().and_then(|e| e.to_str()) {
+        Some("html") => "text/html; charset=utf-8",
+        Some("css") => "text/css; charset=utf-8",
+        Some("js") => "text/javascript; charset=utf-8",
+        Some("json") => "application/json",
+        Some("svg") => "image/svg+xml",
+        Some("png") => "image/png",
+        Some("ico") => "image/x-icon",
+        Some("woff") => "font/woff",
+        Some("woff2") => "font/woff2",
+        Some("ttf") => "font/ttf",
+        Some("map") => "application/json",
+        Some("txt") | Some("md") => "text/plain; charset=utf-8",
+        _ => "application/octet-stream",
+    }
+}
+
 #[tokio::main]
 async fn main() {
+    // Parse CLI arguments
+    let args = Args::parse();
+
     // Ensure the folder that stores saved project files exists.
-    std::fs::create_dir_all("projects").ok();
+    std::fs::create_dir_all(projects_dir()).ok();
 
     let app = Router::new()
         .route("/api/tree", get(get_tree))
@@ -83,12 +171,12 @@ async fn main() {
         .route("/api/project/save", axum::routing::post(project::save_project))
         .route("/api/project/load", get(project::load_project))
         .route("/api/project/list", get(project::list_projects))
-        .fallback_service(ServeDir::new("static"))
+        .fallback(serve_embedded)
         .layer(CorsLayer::permissive());
 
-    let addr = "0.0.0.0:3000";
+    let addr = format!("{}:{}", args.host, args.port);
     println!("LaTeX project server running at http://{addr}");
-    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
+    let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();
 }
 

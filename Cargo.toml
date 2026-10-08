@@ -12,6 +12,8 @@ tower-http = { version = "0.5", features = ["fs", "cors"] }
 calamine = "0.24"
 notify = "6"
 tokio-stream = "0.1.19"
+include_dir = "0.7.4"
+clap = { version = "4.0", features = ["derive"] }
 
 [profile.release]
 opt-level = 2
