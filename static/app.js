@@ -963,11 +963,19 @@ function buildFigureSnippet(imagePath) {
 /// Escapes LaTeX special characters in cell values so the inserted table
 /// remains compilable.
 function escapeLatex(value) {
-  return String(value)
-    .replace(/\\/g, "\\textbackslash{}")
-    .replace(/([&%$#_{}])/g, "\\$1")
-    .replace(/~/g, "\\textasciitilde{}")
-    .replace(/\^/g, "\\textasciicircum{}");
+  const latexEscapes = {
+    "\\": "\\textbackslash{}",
+    "&": "\\&",
+    "%": "\\%",
+    "$": "\\$",
+    "#": "\\#",
+    "_": "\\_",
+    "{": "\\{",
+    "}": "\\}",
+    "~": "\\textasciitilde{}",
+    "^": "\\textasciicircum{}",
+  };
+  return String(value).replace(/[\\&%$#_{}~^]/g, (ch) => latexEscapes[ch]);
 }
 
 /// Synchronous GET (blocks briefly, deliberately only used when starting to
