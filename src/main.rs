@@ -703,7 +703,8 @@ async fn get_table(Query(q): Query<PathQuery>) -> ApiResult<Json<table::TableRes
 
     let result = tokio::task::spawn_blocking(move || table::read_table(&path))
         .await
-        .map_err(|e| AppError(StatusCode::INTERNAL_SERVER_ERROR, format!("Task error: {e}")))?;
+        .map_err(|e| AppError(StatusCode::INTERNAL_SERVER_ERROR, format!("Task error: {e}")))?
+        .map_err(|e| AppError(StatusCode::BAD_REQUEST, e))?;
 
     Ok(Json(result))
 }
