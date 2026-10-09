@@ -686,7 +686,11 @@ async function openWorkingDir(dir) {
     const res = await apiGet(`/api/tree?dir=${encodeURIComponent(dir)}`);
     const tree = await res.json();
     state.workingDir = dir;
-    state.expandedPaths = new Set(); // new folder: collapse all subfolders again
+    // New folder: reset the expanded state, but show the first level of
+    // subfolders expanded so they are visible right away.
+    state.expandedPaths = new Set(
+      (tree.children || []).filter((c) => c.is_dir).map((c) => c.path)
+    );
     el.workingDirInput.value = dir;
     renderTree(tree);
     setStatus(`Folder opened: ${dir}`);
@@ -1882,4 +1886,18 @@ el.btnLoadProject.addEventListener("click", async () => {
 
 // ---------- Initialization ----------
 
+// Opens the server's start folder (the --dir argument, default: the folder
+// the server was started in) automatically. /api/browse without a "dir"
+// parameter returns exactly that root folder.
+async function openStartDir() {
+  try {
+    const res = await apiGet("/api/browse");
+    const data = await res.json();
+    await openWorkingDir(data.current);
+  } catch (e) {
+    setStatus(`Start folder could not be opened: ${e.message}`, true);
+  }
+}
+
 refreshProjectList();
+openStartDir();
