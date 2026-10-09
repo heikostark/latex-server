@@ -32,6 +32,8 @@ pub fn build_tree(path: &Path, depth: usize) -> std::io::Result<TreeNode> {
             .filter_map(|e| e.ok())
             .map(|e| e.path())
             .filter(|p| !is_hidden(p))
+            // Skip symlinks that lead outside the working directory.
+            .filter(|p| crate::is_inside_root(p))
             .collect();
 
         // Directories first, then files, both alphabetically.

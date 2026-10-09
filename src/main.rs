@@ -21,6 +21,7 @@ use include_dir::{include_dir, Dir};
 use serde::{Deserialize, Serialize};
 use std::convert::Infallible;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 use tokio_stream::{Stream, StreamExt};
 use tower_http::cors::CorsLayer;
 
@@ -46,6 +47,12 @@ struct Args {
     /// The host address the server should bind to (e.g. 127.0.0.1 or 0.0.0.0)
     #[arg(short, long, default_value = "127.0.0.1")]
     host: String,
+
+    /// Working directory the server is allowed to browse and modify.
+    /// Only this directory and its subdirectories are accessible; folders
+    /// above it are not. Defaults to the current directory.
+    #[arg(short = 'd', long, default_value = ".")]
+    dir: PathBuf,
 }
 
 /// Generic error type for API handlers.
@@ -65,24 +72,48 @@ impl From<std::io::Error> for AppError {
 
 pub(crate) type ApiResult<T> = Result<T, AppError>;
 
-/// Validates that a candidate path is within the given root directory.
-/// Both paths are canonicalized to prevent symlink/.. traversal attacks.
-fn ensure_within_dir(root: &Path, candidate: &Path) -> ApiResult<PathBuf> {
-    let root_canonical = std::fs::canonicalize(root).map_err(|e| {
-        AppError(
-            StatusCode::BAD_REQUEST,
-            format!("Invalid working directory: {e}"),
-        )
-    })?;
+/// The canonical root directory all file access is confined to. Set once
+/// at startup from the `--dir` CLI argument (default: current directory).
+static ROOT_DIR: OnceLock<PathBuf> = OnceLock::new();
 
-    let candidate_canonical = std::fs::canonicalize(candidate).map_err(|e| {
+/// Returns the canonical root directory (see `ROOT_DIR`).
+pub(crate) fn root_dir() -> &'static Path {
+    ROOT_DIR
+        .get()
+        .expect("root directory must be initialised at startup")
+        .as_path()
+}
+
+/// True if `path` (after resolving symlinks and `..`) lies inside the root
+/// directory. Used to hide symlinks that point outside of it.
+pub(crate) fn is_inside_root(path: &Path) -> bool {
+    std::fs::canonicalize(path)
+        .map(|p| p.starts_with(root_dir()))
+        .unwrap_or(false)
+}
+
+/// Validates that a candidate path is within the root directory (the
+/// working directory chosen at startup). Relative paths are interpreted
+/// relative to the root. The path is canonicalized to prevent
+/// symlink/.. traversal attacks; the check is component-wise, so e.g.
+/// `/work-evil` is not accepted for a root of `/work`.
+fn ensure_within_dir(candidate: &Path) -> ApiResult<PathBuf> {
+    let root = root_dir();
+
+    let candidate = if candidate.is_absolute() {
+        candidate.to_path_buf()
+    } else {
+        root.join(candidate)
+    };
+
+    let candidate_canonical = std::fs::canonicalize(&candidate).map_err(|e| {
         AppError(
             StatusCode::BAD_REQUEST,
             format!("Invalid path: {e}"),
         )
     })?;
 
-    if !candidate_canonical.starts_with(&root_canonical) {
+    if !candidate_canonical.starts_with(root) {
         return Err(AppError(
             StatusCode::FORBIDDEN,
             format!(
@@ -175,6 +206,20 @@ fn static_mime_type(path: &str) -> &'static str {
 #[tokio::main]
 async fn main() {
     let args = Args::parse();
+
+    let root = match std::fs::canonicalize(&args.dir) {
+        Ok(p) if p.is_dir() => p,
+        Ok(p) => {
+            eprintln!("Error: not a directory: {}", p.display());
+            std::process::exit(1);
+        }
+        Err(e) => {
+            eprintln!("Error: working directory {} is not usable: {e}", args.dir.display());
+            std::process::exit(1);
+        }
+    };
+    ROOT_DIR.set(root.clone()).expect("root directory is set only once");
+
     std::fs::create_dir_all(projects_dir()).ok();
 
     let app = Router::new()
@@ -203,6 +248,7 @@ async fn main() {
 
     let addr = format!("{}:{}", args.host, args.port);
     println!("LaTeX project server running at http://{addr}");
+    println!("Working directory (root): {}", root.display());
     let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();
 }
@@ -213,7 +259,7 @@ struct DirQuery {
 }
 
 async fn get_tree(Query(q): Query<DirQuery>) -> ApiResult<Json<tree::TreeNode>> {
-    let base = ensure_within_dir(Path::new("."), &PathBuf::from(&q.dir))?;
+    let base = ensure_within_dir(&PathBuf::from(&q.dir))?;
     if !base.is_dir() {
         return Err(AppError(
             StatusCode::BAD_REQUEST,
@@ -243,25 +289,31 @@ struct BrowseResponse {
 }
 
 async fn browse_dirs(Query(q): Query<BrowseQuery>) -> ApiResult<Json<BrowseResponse>> {
-    let start = q.dir.unwrap_or_else(|| std::env::var("HOME").unwrap_or_else(|_| "/".to_string()));
-    let path = ensure_within_dir(Path::new("."), &PathBuf::from(&start))?;
-    if !path.is_dir() {
+    // Without an explicit directory, start at the root (working directory).
+    let start = q
+        .dir
+        .map(PathBuf::from)
+        .unwrap_or_else(|| root_dir().to_path_buf());
+    let canonical = ensure_within_dir(&start)?;
+    if !canonical.is_dir() {
         return Err(AppError(
             StatusCode::BAD_REQUEST,
-            format!("Folder not found: {start}"),
+            format!("Folder not found: {}", start.display()),
         ));
     }
 
-    let canonical = std::fs::canonicalize(&path).unwrap_or(path);
-    let parent = canonical
-        .parent()
-        .filter(|_| canonical.to_string_lossy() != "/")
-        .map(|p| p.to_string_lossy().to_string());
+    // No "parent" at the root: folders above it must not be reachable.
+    let parent = if canonical == root_dir() {
+        None
+    } else {
+        canonical.parent().map(|p| p.to_string_lossy().to_string())
+    };
 
     let mut dirs: Vec<BrowseEntry> = std::fs::read_dir(&canonical)?
         .filter_map(|e| e.ok())
         .map(|e| e.path())
-        .filter(|p| p.is_dir() && !is_hidden(p))
+        // Skip hidden folders and symlinks that lead outside the root.
+        .filter(|p| p.is_dir() && !is_hidden(p) && is_inside_root(p))
         .map(|p| BrowseEntry {
             name: p
                 .file_name()
@@ -287,7 +339,7 @@ struct WatchQuery {
 async fn watch_dir_sse(
     Query(q): Query<WatchQuery>,
 ) -> ApiResult<Sse<impl Stream<Item = Result<Event, Infallible>>>> {
-    let dir = ensure_within_dir(Path::new("."), &PathBuf::from(&q.dir))?;
+    let dir = ensure_within_dir(&PathBuf::from(&q.dir))?;
     if !dir.is_dir() {
         return Err(AppError(
             StatusCode::BAD_REQUEST,
@@ -314,7 +366,7 @@ struct CreateFolderBody {
 }
 
 async fn create_folder(Json(body): Json<CreateFolderBody>) -> ApiResult<Json<serde_json::Value>> {
-    let dir = ensure_within_dir(Path::new("."), &PathBuf::from(&body.dir))?;
+    let dir = ensure_within_dir(&PathBuf::from(&body.dir))?;
     if !dir.is_dir() {
         return Err(AppError(
             StatusCode::BAD_REQUEST,
@@ -351,7 +403,7 @@ struct PathQuery {
 }
 
 async fn get_file(Query(q): Query<PathQuery>) -> ApiResult<String> {
-    let path = ensure_within_dir(Path::new("."), &PathBuf::from(&q.path))?;
+    let path = ensure_within_dir(&PathBuf::from(&q.path))?;
     let content = std::fs::read_to_string(&path).map_err(|e| {
         AppError(
             StatusCode::BAD_REQUEST,
@@ -368,7 +420,7 @@ struct SaveFileBody {
 }
 
 async fn save_file(Json(body): Json<SaveFileBody>) -> ApiResult<Json<serde_json::Value>> {
-    let path = ensure_within_dir(Path::new("."), &PathBuf::from(&body.path))?;
+    let path = ensure_within_dir(&PathBuf::from(&body.path))?;
     backup_before_change(&path);
     std::fs::write(&path, &body.content)?;
     Ok(Json(serde_json::json!({ "ok": true })))
@@ -381,7 +433,7 @@ struct CreateFileBody {
 }
 
 async fn create_file(Json(body): Json<CreateFileBody>) -> ApiResult<Json<serde_json::Value>> {
-    let dir = ensure_within_dir(Path::new("."), &PathBuf::from(&body.dir))?;
+    let dir = ensure_within_dir(&PathBuf::from(&body.dir))?;
     if !dir.is_dir() {
         return Err(AppError(
             StatusCode::BAD_REQUEST,
@@ -431,7 +483,7 @@ struct RenameFileBody {
 }
 
 async fn rename_file(Json(body): Json<RenameFileBody>) -> ApiResult<Json<serde_json::Value>> {
-    let old_path = ensure_within_dir(Path::new("."), &PathBuf::from(&body.path))?;
+    let old_path = ensure_within_dir(&PathBuf::from(&body.path))?;
     if !old_path.exists() {
         return Err(AppError(
             StatusCode::NOT_FOUND,
@@ -473,7 +525,7 @@ struct DeleteFileBody {
 }
 
 async fn delete_file(Json(body): Json<DeleteFileBody>) -> ApiResult<Json<serde_json::Value>> {
-    let path = ensure_within_dir(Path::new("."), &PathBuf::from(&body.path))?;
+    let path = ensure_within_dir(&PathBuf::from(&body.path))?;
     if !path.exists() {
         return Err(AppError(
             StatusCode::NOT_FOUND,
@@ -505,7 +557,7 @@ struct CompileResponse {
 }
 
 async fn compile_tex(Json(body): Json<CompileBody>) -> ApiResult<Json<CompileResponse>> {
-    let tex_path = ensure_within_dir(Path::new("."), &PathBuf::from(&body.path))?;
+    let tex_path = ensure_within_dir(&PathBuf::from(&body.path))?;
     if !tex_path.is_file() {
         return Err(AppError(
             StatusCode::BAD_REQUEST,
@@ -540,8 +592,8 @@ struct LatexDiffResponse {
 }
 
 async fn run_latexdiff_handler(Json(body): Json<LatexDiffBody>) -> ApiResult<Json<LatexDiffResponse>> {
-    let old_path = ensure_within_dir(Path::new("."), &PathBuf::from(&body.old_path))?;
-    let new_path = ensure_within_dir(Path::new("."), &PathBuf::from(&body.new_path))?;
+    let old_path = ensure_within_dir(&PathBuf::from(&body.old_path))?;
+    let new_path = ensure_within_dir(&PathBuf::from(&body.new_path))?;
 
     if !old_path.is_file() {
         return Err(AppError(
@@ -574,7 +626,7 @@ async fn run_latexdiff_handler(Json(body): Json<LatexDiffBody>) -> ApiResult<Jso
 }
 
 async fn get_pdf(Query(q): Query<PathQuery>) -> ApiResult<Response> {
-    let path = ensure_within_dir(Path::new("."), &PathBuf::from(&q.path))?;
+    let path = ensure_within_dir(&PathBuf::from(&q.path))?;
     let bytes = std::fs::read(&path).map_err(|e| {
         AppError(
             StatusCode::NOT_FOUND,
@@ -599,7 +651,7 @@ async fn get_pdf(Query(q): Query<PathQuery>) -> ApiResult<Response> {
 }
 
 async fn get_image(Query(q): Query<PathQuery>) -> ApiResult<Response> {
-    let path = ensure_within_dir(Path::new("."), &PathBuf::from(&q.path))?;
+    let path = ensure_within_dir(&PathBuf::from(&q.path))?;
     let content_type = match path
         .extension()
         .and_then(|e| e.to_str())
@@ -639,7 +691,7 @@ async fn get_image(Query(q): Query<PathQuery>) -> ApiResult<Response> {
 }
 
 async fn get_table(Query(q): Query<PathQuery>) -> ApiResult<Json<table::TableResult>> {
-    let path = ensure_within_dir(Path::new("."), &PathBuf::from(&q.path))?;
+    let path = ensure_within_dir(&PathBuf::from(&q.path))?;
     if !path.is_file() {
         return Err(AppError(
             StatusCode::BAD_REQUEST,
@@ -656,7 +708,7 @@ async fn get_table(Query(q): Query<PathQuery>) -> ApiResult<Json<table::TableRes
 }
 
 async fn get_bib(Query(q): Query<PathQuery>) -> ApiResult<Json<Vec<bibtex::BibEntry>>> {
-    let path = ensure_within_dir(Path::new("."), &PathBuf::from(&q.path))?;
+    let path = ensure_within_dir(&PathBuf::from(&q.path))?;
     let content = std::fs::read_to_string(&path).map_err(|e| {
         AppError(
             StatusCode::BAD_REQUEST,
@@ -679,7 +731,7 @@ async fn create_bib_entry(Json(body): Json<BibEntryCreateBody>) -> ApiResult<Jso
         return Err(AppError(StatusCode::BAD_REQUEST, "The entry must not be empty.".into()));
     }
 
-    let bib_path = ensure_within_dir(Path::new("."), &PathBuf::from(&body.bib_path))?;
+    let bib_path = ensure_within_dir(&PathBuf::from(&body.bib_path))?;
     let existing = std::fs::read_to_string(&bib_path).unwrap_or_default();
 
     let mut new_content = existing;
@@ -705,7 +757,7 @@ struct BibEntryUpdateBody {
 }
 
 async fn update_bib_entry(Json(body): Json<BibEntryUpdateBody>) -> ApiResult<Json<serde_json::Value>> {
-    let bib_path = ensure_within_dir(Path::new("."), &PathBuf::from(&body.bib_path))?;
+    let bib_path = ensure_within_dir(&PathBuf::from(&body.bib_path))?;
     let content = std::fs::read_to_string(&bib_path).map_err(|e| {
         AppError(
             StatusCode::BAD_REQUEST,
@@ -741,7 +793,7 @@ struct BibEntryDeleteBody {
 }
 
 async fn delete_bib_entry(Json(body): Json<BibEntryDeleteBody>) -> ApiResult<Json<serde_json::Value>> {
-    let bib_path = ensure_within_dir(Path::new("."), &PathBuf::from(&body.bib_path))?;
+    let bib_path = ensure_within_dir(&PathBuf::from(&body.bib_path))?;
     let content = std::fs::read_to_string(&bib_path).map_err(|e| {
         AppError(
             StatusCode::BAD_REQUEST,

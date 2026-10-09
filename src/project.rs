@@ -3,7 +3,7 @@ use axum::extract::Query;
 use axum::http::StatusCode;
 use axum::Json;
 use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct ProjectConfig {
@@ -29,8 +29,9 @@ pub async fn save_project(Json(config): Json<ProjectConfig>) -> ApiResult<Json<s
         return Err(AppError(StatusCode::BAD_REQUEST, "Project name must not be empty.".into()));
     }
     
-    // Validate that working_dir exists and is accessible
+    // Validate that working_dir exists and lies within the server's root directory
     let working_dir = PathBuf::from(&config.working_dir);
+    ensure_within_dir(&working_dir)?;
     if !working_dir.is_dir() {
         return Err(AppError(
             StatusCode::BAD_REQUEST,
@@ -60,7 +61,7 @@ pub async fn load_project(Query(q): Query<LoadQuery>) -> ApiResult<Json<ProjectC
     
     // Validate the working_dir from the loaded config to prevent path traversal attacks
     let working_dir = PathBuf::from(&config.working_dir);
-    ensure_within_dir(Path::new("."), &working_dir)?;
+    ensure_within_dir(&working_dir)?;
     
     Ok(Json(config))
 }
