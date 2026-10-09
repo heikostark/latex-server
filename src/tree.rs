@@ -9,7 +9,6 @@ pub struct TreeNode {
     pub name: String,
     pub path: String,
     pub is_dir: bool,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub children: Vec<TreeNode>,
 }
 
